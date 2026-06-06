@@ -18,7 +18,7 @@ from .base import InitStep
 
 
 class BootstrapStep(InitStep):
-    """Replaces what used to be Claude's job in init.md steps 1-2.
+    """Replaces what used to be the interactive agent's init.md steps 1-2.
 
     Safe to call on an already-initialized project — every sub-step is
     idempotent, and the bootstrap only commits if it actually did work.

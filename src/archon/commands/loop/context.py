@@ -112,8 +112,8 @@ class LoopContext:
 
         Reads ``.archon/config.json`` fresh each call (cheap, and keeps
         behaviour identical to the rest of the loop which re-reads config
-        per phase). Defaults to ``"claude-code"`` for an unconfigured
-        project, so the single-agent path is unchanged.
+        per phase). Defaults to ``"codex-gpt"`` for an unconfigured
+        project.
         """
         from archon.commands.tooling.project_config import (
             load_project_config,
@@ -132,8 +132,7 @@ class LoopContext:
         dataclass, so the prover phase can hand it straight to the process
         pool worker and the worker rebuilds a fully-configured runner via
         :func:`~archon.agent.build_runner`. Returns the built-in
-        ``"claude-code"`` descriptor for an unconfigured project, so the
-        default path is unchanged.
+        ``"codex-gpt"`` descriptor for an unconfigured project.
         """
         from archon.commands.tooling.project_config import (
             load_harness_descriptor,
@@ -149,8 +148,8 @@ class LoopContext:
         """Build the :class:`~archon.agent.AgentRunner` for a role.
 
         Routes through :func:`~archon.agent.build_runner` so plan/review
-        pick up any per-role harness override. With no override this is
-        exactly ``ClaudeAgent(model=ctx.model, role=role)``.
+        pick up any per-role harness override. With no override this uses
+        the default Codex harness.
         """
         from archon.agent import build_runner
         from archon.commands.tooling.project_config import load_project_config

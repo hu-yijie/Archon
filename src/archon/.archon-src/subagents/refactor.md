@@ -115,7 +115,7 @@ For large refactors that naturally decompose into independent file-level pieces,
 Dispatch pattern (Bash; treat as blocking — await each child's report before acting on it):
 
 ```
-python3 .claude/tools/archon-subagent.py \
+python3 .archon/tools/archon-subagent.py \
   --name <subagent-name> \
   --slug <child-slug> \
   --directive-file .archon/logs/iter-NNN/<your-slug>/<name>-<child-slug>-directive.md \
@@ -125,12 +125,12 @@ python3 .claude/tools/archon-subagent.py \
 
 Rules:
 
-- Every child's declared write-domain must be a strict subset of yours; the Archon CLI rejects violations before launching Claude.
+- Every child's declared write-domain must be a strict subset of yours; the Archon CLI rejects violations before launching the child agent.
 - Siblings must declare disjoint write-domains. Two siblings overlapping on the same `.lean` file is a hard error.
 - Pass each independent child in a SEPARATE Bash tool call within ONE assistant message, so they run in parallel (subject to the per-iteration `max_parallel` cap).
 - Do NOT pass `--parent-slug` — the wrapper reads `ARCHON_SUBAGENT_SLUG` from env and forwards it automatically.
 
-If your refactor is small enough to do yourself, prefer that — child dispatch costs another Claude run per child. Use it when the work genuinely parallelizes.
+If your refactor is small enough to do yourself, prefer that — child dispatch costs another agent run per child. Use it when the work genuinely parallelizes.
 
 ## Handling Cascading Changes
 

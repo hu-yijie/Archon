@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Generic Archon subagent wrapper — invoked by Claude in the autonomous loop.
+"""Generic Archon subagent wrapper — invoked by agents in the autonomous loop.
 
-Installed once at ``.claude/tools/archon-subagent.py``. There is no
+Installed once at ``.archon/tools/archon-subagent.py``. There is no
 per-role script anymore: the role comes from ``--name <subagent>``,
 which the archon CLI looks up in the descriptor registry
 (``.archon/subagents/<name>.md`` + built-in defaults).
 
-Usage (Claude calls this via Bash)::
+Usage (the active agent calls this via shell)::
 
-    python3 .claude/tools/archon-subagent.py \\
+    python3 .archon/tools/archon-subagent.py \\
         --name <subagent-name> \\
         --slug <slug> \\
         --directive-file <path> \\
@@ -113,7 +113,7 @@ def main() -> int:
                 f"ARCHON_ITER_NUM not set in environment; "
                 f"derived iter={derived} from .archon/logs/iter-{derived}/. "
                 f"This is the wrapper's fallback path — normally the Archon "
-                f"loop sets ARCHON_ITER_NUM before launching Claude.",
+                f"loop sets ARCHON_ITER_NUM before launching the agent.",
                 file=sys.stderr,
             )
             iter_num = derived
@@ -123,7 +123,7 @@ def main() -> int:
                 "`.archon/logs/iter-NNN/` directories were found under the "
                 "current working directory. This script is meant to be "
                 "invoked by the Archon loop, which sets ARCHON_ITER_NUM "
-                "before launching Claude. Run it inside an initialised "
+                "before launching the agent. Run it inside an initialised "
                 "Archon project (one whose `.archon/logs/` already has an "
                 "iter dir), or set ARCHON_ITER_NUM explicitly.",
                 file=sys.stderr,

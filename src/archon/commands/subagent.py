@@ -1,4 +1,4 @@
-"""Internal: invoke a subagent by name. Used by ``.claude/tools/`` wrappers.
+"""Internal: invoke a subagent by name. Used by ``.archon/tools/`` wrappers.
 
 One generic command — ``archon subagent <name> --slug ... --directive-file ...``
 — covers every subagent. ``<name>`` is looked up in the registry built
@@ -14,7 +14,7 @@ need to perform that archival step itself (no agent-side ``cp``).
 This is the runtime entry point shared by:
 
 * The autonomous loop's in-session subagent calls (via the
-  ``.claude/tools/archon-subagent.py`` wrapper, which streams the
+  ``.archon/tools/archon-subagent.py`` wrapper, which streams the
   child's JSONL through the Archon parser).
 * Anything else that wants to fire a subagent from the shell.
 """

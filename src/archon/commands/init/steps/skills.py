@@ -1,4 +1,4 @@
-"""Install the Archon `lean4` skills bundle as a project-scoped Claude plugin."""
+"""Install Archon project tools and, when needed, Claude plugin metadata."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .base import InitStep
 
 class SkillsStep(InitStep):
     name = "Installing Archon skills"
-    number = 5
+    number = 6
 
     def run(self) -> None:
         ctx = self.ctx
@@ -28,12 +28,16 @@ class SkillsStep(InitStep):
             log.error("Archon lean4 skills not found in package data")
             raise typer.Exit(1)
 
-        (ctx.project_path / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
-        (ctx.project_path / ".claude" / "rules").mkdir(parents=True, exist_ok=True)
+        needs_claude = _project_uses_claude(ctx.project_path)
+        if needs_claude:
+            (ctx.project_path / ".claude" / "skills").mkdir(parents=True, exist_ok=True)
+            (ctx.project_path / ".claude" / "rules").mkdir(parents=True, exist_ok=True)
+            self._register_marketplace(home, skills_dir)
+            self._install_plugin(home)
+        else:
+            log.step("Codex harness selected — skipping Claude plugin registration")
 
-        self._register_marketplace(home, skills_dir)
-        self._install_plugin(home)
-        self._copy_archon_tools()
+        self._copy_archon_tools(include_claude_copy=needs_claude)
         self._copy_subagent_descriptors()
         self._cleanup_legacy_subagents()
 
@@ -90,53 +94,61 @@ class SkillsStep(InitStep):
 
     _SUBAGENT_WRAPPER_STEM = "subagent_wrapper"
 
-    def _copy_archon_tools(self) -> None:
-        """Copy every Archon tool script into the project's .claude/tools/.
+    def _copy_archon_tools(self, *, include_claude_copy: bool) -> None:
+        """Copy every Archon tool script into the project's .archon/tools/.
 
         Each script in our package's ``data/tools/`` becomes
-        ``.claude/tools/archon-<stem-with-dashes>.py`` in the project,
+        ``.archon/tools/archon-<stem-with-dashes>.py`` in the project,
         with the wrapper installed once as ``archon-subagent.py``
-        (no per-role copies anymore — the wrapper takes ``--name``).
+        (no per-role copies anymore — the wrapper takes ``--name``). When
+        a Claude harness is configured, also mirror the files to the legacy
+        ``.claude/tools/`` path so old prompts keep working.
         """
         ctx = self.ctx
         tools_src = data_path("tools")
-        tools_dst = ctx.project_path / ".claude" / "tools"
-        tools_dst.mkdir(parents=True, exist_ok=True)
+        destinations = [ctx.project_path / ".archon" / "tools"]
+        if include_claude_copy:
+            destinations.append(ctx.project_path / ".claude" / "tools")
+        for dst in destinations:
+            dst.mkdir(parents=True, exist_ok=True)
 
         if not tools_src.is_dir():
             log.warn("Archon tools directory not found in package data")
             return
 
-        for src in sorted(tools_src.glob("*.py")):
-            if src.stem == self._SUBAGENT_WRAPPER_STEM:
-                dst = tools_dst / "archon-subagent.py"
-            else:
-                # informal_agent.py -> archon-informal-agent.py
-                stem = src.stem.replace("_", "-")
-                dst = tools_dst / f"archon-{stem}.py"
-            copy_file(src, dst, overwrite=True)
-            log.success(f"Copied {dst.name}")
+        for tools_dst in destinations:
+            for src in sorted(tools_src.glob("*.py")):
+                if src.stem == self._SUBAGENT_WRAPPER_STEM:
+                    dst = tools_dst / "archon-subagent.py"
+                else:
+                    # informal_agent.py -> archon-informal-agent.py
+                    stem = src.stem.replace("_", "-")
+                    dst = tools_dst / f"archon-{stem}.py"
+                copy_file(src, dst, overwrite=True)
+                log.success(f"Copied {dst.relative_to(ctx.project_path)}")
 
         # Sweep abandoned per-role wrapper files from previous Archon
         # versions. We only remove files we know we used to install —
         # never anything else under .claude/tools/.
-        for stale in (
-            "archon-refactor-agent.py",
-            "archon-analogy-agent.py",
-            "archon-challenger-agent.py",
-            "archon-coordinator-agent.py",
-            "archon-review-definition-correctness-agent.py",
-            "archon-review-comment-hygiene-agent.py",
-            "archon-review-blueprint-consistency-agent.py",
-            "archon-review-design-choices-agent.py",
-            "archon-review-mathlib-overlap-agent.py",
-            "archon-refactor-wrapper.py",
-            "archon-analogy-wrapper.py",
-            "archon-challenger-wrapper.py",
-        ):
-            stale_path = tools_dst / stale
-            if stale_path.is_file():
-                stale_path.unlink()
+        claude_tools = ctx.project_path / ".claude" / "tools"
+        if claude_tools.is_dir():
+            for stale in (
+                "archon-refactor-agent.py",
+                "archon-analogy-agent.py",
+                "archon-challenger-agent.py",
+                "archon-coordinator-agent.py",
+                "archon-review-definition-correctness-agent.py",
+                "archon-review-comment-hygiene-agent.py",
+                "archon-review-blueprint-consistency-agent.py",
+                "archon-review-design-choices-agent.py",
+                "archon-review-mathlib-overlap-agent.py",
+                "archon-refactor-wrapper.py",
+                "archon-analogy-wrapper.py",
+                "archon-challenger-wrapper.py",
+            ):
+                stale_path = claude_tools / stale
+                if stale_path.is_file():
+                    stale_path.unlink()
 
     def _copy_subagent_descriptors(self) -> None:
         """Copy every built-in subagent descriptor into ``.archon/subagents/``.
@@ -179,3 +191,19 @@ class SkillsStep(InitStep):
                     log.success(f"Removed legacy .claude/agents/{stem}.md")
                 except OSError as e:
                     log.warn(f"Could not remove {stale}: {e}")
+
+
+def _project_uses_claude(project_path: Path) -> bool:
+    from archon.agent import CLAUDE_HARNESS
+    from archon.commands.tooling.project_config import (
+        load_harness_descriptor,
+        load_project_config,
+        resolve_role_harness,
+    )
+
+    cfg = load_project_config(project_path)
+    for role in ("plan", "prover", "review"):
+        name = resolve_role_harness(cfg, role)
+        if load_harness_descriptor(cfg, name).runner == CLAUDE_HARNESS:
+            return True
+    return False

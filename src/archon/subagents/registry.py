@@ -172,18 +172,18 @@ def _parse_dispatcher_notes(path: Path, raw: object) -> str:
     )
 
 
-def _parse_harness(path: Path, raw: object) -> str:
+def _parse_harness(path: Path, raw: object) -> str | None:
     """Parse the optional ``harness`` frontmatter field.
 
     Accepts:
-    * Missing / null / empty → ``"claude-code"`` (the built-in default).
+    * Missing / null / empty → ``None`` (inherit loop/default harness).
     * Non-empty string → returned verbatim.
 
     Raises ValueError on other shapes so a typo (e.g. a list) doesn't
     silently fall back to the default engine.
     """
     if raw is None or raw == "":
-        return "claude-code"
+        return None
     if isinstance(raw, str):
         return raw
     raise ValueError(

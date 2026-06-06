@@ -5,7 +5,7 @@
 (lake + git + mathlib + blueprint, gitignore entries, references/ dir).
 `WorkspaceTemplates` renders README.md and references/summary.md skeletons.
 
-Claude's job, after this module has run, is purely semantic: verify the
+The agent's job, after this module has run, is purely semantic: verify the
 setup, decide which loose files belong in references/, fill in the prose
 sections of README.md and summary.md, and propose initial objectives.
 """
@@ -122,7 +122,7 @@ class BootstrapOptions:
 
 @dataclass
 class BootstrapReport:
-    """What the bootstrap actually did. Surfaces to the user + Claude.
+    """What the bootstrap actually did. Surfaces to the user + agent.
 
     `did_work` tracks whether any step actually mutated the project tree.
     No-op paths ("already present", `lake update` that found nothing,
@@ -152,7 +152,7 @@ class ProjectBootstrap:
     """Deterministic setup of a Lean formalization project.
 
     Safe to re-run on an already-initialized project — every step is
-    idempotent. The idea is that Claude can call `run()` confidently
+    idempotent. The idea is that the agent can call `run()` confidently
     without needing to know the project state.
     """
 
@@ -327,9 +327,9 @@ class ProjectBootstrap:
 
 
 class WorkspaceTemplates:
-    """Writes skeleton files that Claude then fills in with prose.
+    """Writes skeleton files that the agent then fills in with prose.
 
-    Keeping the skeletons here (not in Claude) means README/summary.md
+    Keeping the skeletons here (not in the agent prompt) means README/summary.md
     structure stays consistent across all Archon projects.
     """
 
@@ -337,7 +337,7 @@ class WorkspaceTemplates:
 # {title}
 
 <!-- archon:readme -->
-<!-- Claude fills in the prose sections below. Keep the section headers. -->
+<!-- The init agent fills in the prose sections below. Keep the section headers. -->
 
 ## Project
 

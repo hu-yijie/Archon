@@ -278,7 +278,7 @@ class LaneRoundExecutor:
         """
         from archon.agent import UnknownHarnessError
         from archon.commands.tooling.project_config import (
-            DEFAULT_HARNESS,
+            CLAUDE_HARNESS,
             load_harness_descriptor,
             load_project_config,
         )
@@ -287,19 +287,19 @@ class LaneRoundExecutor:
         harnesses = {}
         for lane in config.lanes:
             descriptor = load_harness_descriptor(cfg, lane.harness)
-            if descriptor.runner != DEFAULT_HARNESS:
+            if descriptor.runner != CLAUDE_HARNESS:
                 raise UnknownHarnessError(
                     f"Lane {lane.lane_id!r} requests harness "
                     f"{descriptor.name!r} (runner {descriptor.runner!r}), but "
                     f"the multilane lane axis only supports the "
-                    f"{DEFAULT_HARNESS!r} runner today. Lane-level result "
+                    f"{CLAUDE_HARNESS!r} runner today. Lane-level result "
                     f"attribution tracks only Claude Code's code_snapshot "
                     f"hook events and Edit/Write tool_calls, so a "
                     f"{descriptor.runner!r} lane's edits would silently fail "
                     f"to promote and never trigger early-stop. To run codex "
                     f"as the prover, route it via loop.roles.prover instead "
                     f"(the single-lane prover path supports it), or keep "
-                    f"this lane on {DEFAULT_HARNESS!r}."
+                    f"this lane on {CLAUDE_HARNESS!r}."
                 )
             harnesses[lane.lane_id] = descriptor
         return harnesses

@@ -1,6 +1,6 @@
-"""Hand off to Claude for the narrow semantic tasks remaining after bootstrap.
+"""Hand off to the configured driver for semantic init tasks after bootstrap.
 
-Claude's job: verify the bootstrap, reorganize loose reference files,
+The agent's job: verify the bootstrap, reorganize loose reference files,
 fill in README / summary.md prose, walk the user through
 archon-protected.yaml, and propose initial objectives. Everything
 deterministic has already happened.
@@ -12,8 +12,13 @@ import json
 import textwrap
 
 from archon import log
-from archon.agent import ClaudeAgent
+from archon.agent import build_runner
 from archon.commands.tooling import protect
+from archon.commands.tooling.project_config import (
+    load_harness_descriptor,
+    load_project_config,
+    resolve_role_harness,
+)
 from archon.commands.tooling.project import ProjectLayout
 
 from ..utils import parse_stage
@@ -21,8 +26,8 @@ from .base import InitStep
 
 
 class SemanticPassStep(InitStep):
-    name = "Claude semantic pass"
-    number = 7
+    name = "Agent semantic pass"
+    number = 8
 
     def run(self) -> None:
         ctx = self.ctx
@@ -39,7 +44,7 @@ class SemanticPassStep(InitStep):
         layout = ProjectLayout.inspect(ctx.project_path)
 
         log.header(f"Initializing project: {project_name}")
-        log.step("Handing off to Claude for the semantic pass.")
+        log.step("Handing off to the configured agent driver for the semantic pass.")
 
         bootstrap_summary = self._build_bootstrap_summary(layout)
 
@@ -63,7 +68,10 @@ class SemanticPassStep(InitStep):
             {json.dumps(bootstrap_summary, indent=2)}
             """)
 
-        ClaudeAgent(model=ctx.model, role="init").run_interactive(
+        cfg = load_project_config(ctx.project_path)
+        harness_name = resolve_role_harness(cfg, "plan")
+        harness = load_harness_descriptor(cfg, harness_name)
+        build_runner(role="init", model=ctx.model, descriptor=harness).run_interactive(
             prompt, cwd=ctx.project_path,
         )
 
@@ -78,9 +86,9 @@ class SemanticPassStep(InitStep):
     # ── private ─────────────────────────────────────────────────────────
 
     def _build_bootstrap_summary(self, layout: ProjectLayout) -> dict:
-        """Structured report for Claude — exactly what the bootstrap did/didn't do.
+        """Structured report for the agent — exactly what the bootstrap did/didn't do.
 
-        Lets Claude skip re-checking the deterministic steps.
+        Lets the agent skip re-checking the deterministic steps.
         """
         ctx = self.ctx
         report = ctx.bootstrap_report

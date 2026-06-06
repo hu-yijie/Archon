@@ -10,7 +10,6 @@ The Archon Python CLI has already attempted to bootstrap the project (Lake, Git,
 
 ```
 ├── .archon/
-├── .claude/
 ├── .git/
 ├── .lake/
 ├── <lean src dir>/
@@ -20,6 +19,10 @@ The Archon Python CLI has already attempted to bootstrap the project (Lake, Git,
 ├── lakefile.toml (or .lean)
 └── lean-toolchain
 ```
+
+If the project explicitly selected the Claude Code harness, a `.claude/`
+directory may also exist for Claude plugin metadata. It is not required for
+the default Codex harness.
 
 - **Verify Initialization:** If the initialization was not done correctly (e.g., `lakefile` is missing, Mathlib is not added, or `blueprint/` is missing), you should alert the user and **fix the installation**.
 - **Organize References:** Look for natural-language files (PDFs, Markdown, TeX) at the project root and move them into the `references/` directory. Give them clean, descriptive names if the current names are not descriptive.
@@ -97,4 +100,4 @@ Use [x] for stages that are truly complete or that you intentionally skip.
 
 ## After init
 
-When you advance the stage out of `init`, tell the user: "Init complete. Exit Claude Code with `/exit` or `Ctrl+D`. Then start the loop with `archon loop <project_path>`."
+When you advance the stage out of `init`, tell the user: "Init complete. Exit this agent session with `/exit` or `Ctrl+D`. Then start the loop with `archon loop <project_path>`."

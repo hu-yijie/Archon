@@ -53,7 +53,7 @@ class SubagentDescriptor:
     """One subagent's manifest.
 
     Parsed from a ``.md`` file with YAML frontmatter — the body of
-    that file is :attr:`prompt_body`, which the spawned Claude reads
+    that file is :attr:`prompt_body`, which the spawned agent reads
     via ``<state_dir>/subagents/<name>.md`` (the wrapper makes sure
     that file is on disk when the subagent starts).
 
@@ -81,9 +81,9 @@ class SubagentDescriptor:
       encode rules like "dispatch me before any Lean work" or
       "do NOT pass STRATEGY.md in my directive". Distinct from
       ``description`` (one-liner) and ``prompt_body`` (what the
-      spawned Claude reads).
-    * ``harness`` — optional engine name for this subagent. Defaults to
-      ``"claude-code"``. Sits below ``loop.harness`` /
+      spawned agent reads).
+    * ``harness`` — optional engine name for this subagent. When omitted,
+      the subagent inherits the loop/default harness. Sits below ``loop.harness`` /
       ``subagents.<name>.harness`` in precedence (see
       :func:`~archon.commands.tooling.project_config.resolve_subagent_harness`),
       so it's a per-descriptor default an operator can still override.
@@ -97,7 +97,7 @@ class SubagentDescriptor:
     default_enabled: bool = True
     mandatory: tuple[str, ...] = ()
     dispatcher_notes: str = ""
-    harness: str = "claude-code"
+    harness: str | None = None
     prompt_body: str = ""
     source_path: Path | None = None
 
@@ -223,9 +223,7 @@ class Subagent:
                 cfg, self.name, fallback=DEFAULT_MODEL,
             )
         # Resolve the harness for this subagent: per-subagent /
-        # loop-wide config override > descriptor frontmatter >
-        # "claude-code". With no config keys this is "claude-code", so
-        # the factory short-circuits to the legacy ClaudeAgent below.
+        # loop-wide config override > descriptor frontmatter > default.
         harness_name = resolve_subagent_harness(
             cfg, self.name, descriptor_harness=descriptor.harness,
         )
@@ -240,7 +238,7 @@ class Subagent:
     ) -> str:
         """Compose the runtime prompt envelope.
 
-        The body the spawned Claude reads sits in
+        The body the spawned agent reads sits in
         ``<state_dir>/subagents/<name>.md`` (shipped from the
         descriptor's ``source_path`` during ``archon init`` and
         refreshed by the registry as needed). This envelope just

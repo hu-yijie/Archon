@@ -13,7 +13,8 @@ from typing import Optional
 import typer
 
 from archon import log
-from archon.agent import ClaudeAgent, DEFAULT_MODEL
+from archon.agent import build_runner
+from archon.commands.tooling.project_config import load_project_config
 from archon.state import read_stage
 
 
@@ -47,7 +48,7 @@ def _count_hints(hints_file: Path) -> list[str]:
 
 
 class DiscussionContext:
-    """Builds the pre-loaded context block sent to Claude.
+    """Builds the pre-loaded context block sent to the configured driver.
 
     Splits out the read-many-files work so the command class stays a
     clean orchestrator.
@@ -103,14 +104,14 @@ class DiscussionContext:
 
 
 class DiscussCommand:
-    """Run an interactive discussion session via Claude."""
+    """Run an interactive discussion session via the configured driver."""
 
     def __init__(
         self,
         project_path: str,
         *,
         focus: str | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         self.project_path = project_path
         self.focus = focus
@@ -136,7 +137,8 @@ class DiscussCommand:
 
         self._announce(resolved, stage)
         try:
-            ClaudeAgent(model=self.model, role="discuss").run_interactive(
+            cfg = load_project_config(resolved)
+            build_runner(role="discuss", model=self.model, cfg=cfg).run_interactive(
                 prompt, cwd=resolved,
             )
         except KeyboardInterrupt:
@@ -338,11 +340,11 @@ def discuss(
         None, "--focus", "-f",
         help="Focus on a specific file or theorem (e.g. 'Algebra/WLocal.lean' or 'wLocal_iff').",
     ),
-    model: str = typer.Option(
-        DEFAULT_MODEL, "--model", "-M",
+    model: str | None = typer.Option(
+        None, "--model", "-M",
         help=(
-            "Model alias. Anthropic: 'opus', 'sonnet', 'haiku' or a full id. "
-            "Non-Anthropic (uses .archon/.env credentials): 'kimi', 'deepseek'."
+            "Model override for Claude Code harnesses. Codex uses the "
+            "configured harness descriptor."
         ),
     ),
 ) -> None:

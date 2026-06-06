@@ -242,7 +242,7 @@ Each subagent in your catalog is one tool. The catalog includes its description,
 Pick a kebab-case **slug** (each call within an iter must use a distinct slug — e.g. `split-wlocal`, `m1b-route`). Write the directive to `.archon/logs/iter-NNN/<name>-<slug>-directive.md`, then run via the Bash tool (foreground, one call):
 
 ```
-python3 .claude/tools/archon-subagent.py \
+python3 .archon/tools/archon-subagent.py \
   --name <subagent-name> \
   --slug <slug> \
   --directive-file .archon/logs/iter-NNN/<name>-<slug>-directive.md \

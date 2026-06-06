@@ -1,11 +1,10 @@
-"""Wrapped Claude Code CLI invocation.
+"""Agent runner routing and the legacy Claude Code runner.
 
-Centralizes how archon launches `claude` so model selection, permission
-flags, and structured JSONL logging are consistent across every phase
-agent (plan, refactor, prover, review, discuss). All sites that talk to
-the `claude` binary should go through ``ClaudeAgent`` — when we later
-swap engines (e.g., OpenClaw or another orchestrator), only this class
-changes.
+Centralizes how archon launches configured agent drivers so model selection,
+permission flags, and structured JSONL logging are consistent across every
+phase agent (plan, refactor, prover, review, discuss). Call sites should ask
+``build_runner`` for a runner instead of constructing driver-specific classes
+directly.
 
 Quick reference:
     agent = ClaudeAgent(model="opus")
@@ -44,10 +43,10 @@ if TYPE_CHECKING:
     )
 
 
-# The built-in harness name: the claude-code engine that has always been
-# the only thing Archon runs. Routing a responsibility to this harness is
-# byte-for-byte equivalent to constructing a ``ClaudeAgent`` directly.
-DEFAULT_HARNESS = "claude-code"
+# Harness names used by the router. Codex is the default driver for this
+# fork; Claude Code remains a built-in runner when selected explicitly.
+CLAUDE_HARNESS = "claude-code"
+DEFAULT_HARNESS = "codex-gpt"
 
 
 # Default model alias. ``opus`` resolves to the latest Opus build at the
@@ -337,11 +336,10 @@ if RAW: RAW.close()
 class AgentRunner(Protocol):
     """The engine interface every call site programs against.
 
-    Today :class:`ClaudeAgent` is the only implementation; Phase 2 adds
-    sibling ``CodexAgent`` / ``GeminiAgent`` runners. Callers obtain a
-    runner from :func:`build_runner` instead of constructing
-    ``ClaudeAgent`` directly, so swapping the engine for a role becomes a
-    config change rather than an edit at every site.
+    ``ClaudeAgent`` and ``CodexAgent`` both implement this protocol. Callers
+    obtain a runner from :func:`build_runner` instead of constructing a
+    driver-specific class directly, so swapping the engine for a role becomes
+    a config change rather than an edit at every site.
 
     The two methods mirror :class:`ClaudeAgent`'s existing signatures
     exactly — headless ``run`` and foreground ``run_interactive`` — so a
@@ -920,7 +918,7 @@ class UnknownHarnessError(ValueError):
 def build_runner(
     *,
     role: str,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     cfg: "ProjectConfig | None" = None,
     harness: str | None = None,
     descriptor: "HarnessDescriptor | None" = None,
@@ -928,9 +926,9 @@ def build_runner(
     """Build the :class:`AgentRunner` for a responsibility.
 
     This is the single decision point for routing a role to an engine.
-    Registered runners: ``"claude-code"`` (the built-in
-    :class:`ClaudeAgent`) and ``"codex"`` (:class:`~archon.agents.codex.CodexAgent`,
-    Phase 2). An unknown runner raises :class:`UnknownHarnessError`.
+    Registered runners: ``"claude-code"`` (:class:`ClaudeAgent`) and
+    ``"codex"`` (:class:`~archon.agents.codex.CodexAgent`). An unknown
+    runner raises :class:`UnknownHarnessError`.
 
     Resolution of *which* harness:
 
@@ -943,14 +941,8 @@ def build_runner(
       descriptor via ``cfg`` when present, else used as a bare name.
     * else ``cfg`` + ``role`` are resolved with
       :func:`resolve_role_harness` (``loop.roles.<role>`` >
-      ``loop.harness`` > ``"claude-code"``).
-    * with none of those, the harness is the built-in ``"claude-code"``.
-
-    Zero-regression invariant: when the resolved harness is
-    ``"claude-code"`` AND no explicit ``harnesses."claude-code"`` entry
-    is configured, this returns exactly ``ClaudeAgent(model=model,
-    role=role)`` — the same object the call site built before the router,
-    with no new parsing on the default path.
+      ``loop.harness`` > ``"codex-gpt"``).
+    * with none of those, the harness is the default ``"codex-gpt"``.
 
     Raises:
         UnknownHarnessError: the resolved harness names a runner that has
@@ -970,10 +962,8 @@ def build_runner(
         else:
             harness = DEFAULT_HARNESS
 
-    # Fast path / zero-regression short-circuit: the built-in claude-code
-    # harness with no explicit descriptor override is the legacy agent,
-    # untouched. We deliberately skip descriptor loading entirely so the
-    # default path proves it never depends on the new config code.
+    # Fast path: explicit built-in Claude Code without a descriptor stays
+    # available without requiring a harnesses.claude-code block.
     has_override = False
     if cfg is not None:
         from archon.commands.tooling.project_config import (
@@ -982,13 +972,18 @@ def build_runner(
 
         has_override = has_explicit_harness_override(cfg, harness)
 
-    if harness == DEFAULT_HARNESS and not has_override:
-        return ClaudeAgent(model=model, role=role)
+    if harness == CLAUDE_HARNESS and not has_override:
+        return ClaudeAgent(model=model or DEFAULT_MODEL, role=role)
 
     # A configured harness descriptor: load + dispatch on its runner.
-    from archon.commands.tooling.project_config import load_harness_descriptor
+    from archon.commands.tooling.project_config import (
+        ProjectConfig,
+        load_harness_descriptor,
+    )
 
-    resolved = load_harness_descriptor(cfg, harness) if cfg is not None else None
+    resolved = load_harness_descriptor(
+        cfg if cfg is not None else ProjectConfig(), harness,
+    )
     if resolved is None:
         # No cfg to load from, but a non-default harness name was passed
         # directly (e.g. by a pool worker before descriptors were
@@ -1001,7 +996,7 @@ def build_runner(
 
 
 def _runner_from_descriptor(
-    descriptor: "HarnessDescriptor", *, model: str, role: str,
+    descriptor: "HarnessDescriptor", *, model: str | None, role: str,
 ) -> AgentRunner:
     """Construct the engine runner named by a resolved descriptor.
 
@@ -1011,10 +1006,10 @@ def _runner_from_descriptor(
     descriptor (model / effort / sandbox / gateway all live there).
     """
     runner = descriptor.runner
-    if runner == DEFAULT_HARNESS:
+    if runner == CLAUDE_HARNESS:
         if descriptor.model:
             model = descriptor.model
-        return ClaudeAgent(model=model, role=role)
+        return ClaudeAgent(model=model or DEFAULT_MODEL, role=role)
     if runner == "codex":
         from archon.agents.codex import CodexAgent
 
@@ -1022,7 +1017,7 @@ def _runner_from_descriptor(
     raise UnknownHarnessError(
         f"Harness {descriptor.name!r} requests runner {runner!r}, but the "
         f"runners available in this version of Archon are "
-        f"{DEFAULT_HARNESS!r} and 'codex'. Remove the harness override or "
+        f"{CLAUDE_HARNESS!r} and 'codex'. Remove the harness override or "
         f"set its runner to a supported value."
     )
 
@@ -1030,6 +1025,7 @@ def _runner_from_descriptor(
 __all__ = [
     "AgentRunner",
     "ClaudeAgent",
+    "CLAUDE_HARNESS",
     "DEFAULT_HARNESS",
     "DEFAULT_MODEL",
     "RunOutcome",

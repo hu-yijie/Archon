@@ -3,8 +3,7 @@
 Covers, without ever spawning ``codex``:
 
 * ``build_runner`` selects a ``CodexAgent`` for a codex descriptor and
-  still short-circuits to ``ClaudeAgent`` when unconfigured (Phase-1
-  zero-regression invariant preserved).
+  for the unconfigured default path in this branch.
 * ``CodexAgent`` argv builder — model / reasoning-effort / sandbox /
   gateway ``-c`` overrides / ``--json`` mirror the bash reference runner,
   and the gateway secret never lands in argv.
@@ -132,20 +131,24 @@ class CodexBuildRunnerTest(unittest.TestCase):
         r = build_runner(role="prover", model="opus", descriptor=_codex_descriptor())
         self.assertIsInstance(r, CodexAgent)
 
-    def test_non_prover_role_stays_claude_code(self):
-        # loop.roles.prover routes only the prover to codex; plan/review
-        # have no override → built-in claude-code.
-        cfg = ProjectConfig(raw=CODEX_CFG)
+    def test_explicit_claude_roles_stay_claude_code(self):
+        cfg = ProjectConfig(
+            raw={
+                **CODEX_CFG,
+                "loop": {
+                    "harness": "codex-gpt",
+                    "roles": {"plan": "claude-code", "review": "claude-code"},
+                },
+            }
+        )
         for role in ("plan", "review"):
             with self.subTest(role=role):
                 r = build_runner(role=role, model="opus", cfg=cfg)
                 self.assertIsInstance(r, ClaudeAgent)
 
-    def test_zero_regression_invariant_still_holds(self):
-        # Empty config => exactly the legacy ClaudeAgent, untouched by the
-        # codex plumbing.
+    def test_empty_config_uses_default_codex(self):
         got = build_runner(role="prover", model="opus", cfg=ProjectConfig())
-        self.assertEqual(got, ClaudeAgent(model="opus", role="prover"))
+        self.assertIsInstance(got, CodexAgent)
 
 
 # ── CodexAgent argv builder (pure; no subprocess) ────────────────────
@@ -437,17 +440,23 @@ class CodexPartialGatewayTest(unittest.TestCase):
         self.assertFalse(any("model_provider" in a for a in argv))
 
 
-# ── run_interactive is headless-only ─────────────────────────────────
+# ── interactive argv / foreground invocation ─────────────────────────
 
 
 class CodexInteractiveTest(unittest.TestCase):
-    def test_run_interactive_raises(self):
+    def test_run_interactive_invokes_foreground_codex(self):
         from pathlib import Path
+        from unittest import mock
+        import subprocess
 
         agent = CodexAgent(descriptor=_codex_descriptor())
-        with self.assertRaises(NotImplementedError) as cm:
-            agent.run_interactive("p", cwd=Path("."))
-        self.assertIn("headless-only", str(cm.exception))
+        with mock.patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            code = agent.run_interactive("p", cwd=Path("."))
+        self.assertEqual(code, 0)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[0], "codex")
+        self.assertIn("-m", argv)
+        self.assertEqual(argv[-1], "p")
 
 
 # ── cross-process descriptor threading (process pool) ────────────────

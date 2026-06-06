@@ -5,9 +5,8 @@ review). At init time we offer the user three choices and translate the
 answer into a ``harness_selection`` value understood by
 :func:`archon.commands.tooling.project_config.apply_harness_selection`:
 
-* **Claude Code + Opus** (default) → ``None`` (no ``loop.harness`` key;
-  the zero-config single-Anthropic path).
-* **Codex CLI + GPT-5.5** → the harness name ``"codex-gpt"`` (every role).
+* **Codex CLI + GPT-5.5** (default) → ``None`` / ``"codex-gpt"``.
+* **Claude Code + Opus** → the harness name ``"claude-code"``.
 * **Mixed** → a ``{role: harness_name}`` dict (per-role routing).
 
 The menu is a plain ``typer`` prompt mirroring
@@ -25,22 +24,20 @@ import typer
 
 from archon import log
 from archon.commands.tooling.project_config import (
+    CLAUDE_HARNESS,
+    CODEX_HARNESS,
     DEFAULT_HARNESS,
     LOOP_ROLES,
 )
 
-# The codex descriptor shipped in ``default_config()['harnesses']``.
-_CODEX_HARNESS = "codex-gpt"
-
 # Accepted ``--harness`` flag values (top-level presets).
-_FLAG_CHOICES = ("claude-code", _CODEX_HARNESS, "mixed")
+_FLAG_CHOICES = (CODEX_HARNESS, CLAUDE_HARNESS, "mixed")
 
-# Per-role defaults for the Mixed preset: codex shines as the prover; plan
-# and review stay on claude-code (their prompts assume Claude Code tools
-# and the codex prompt variant is prover-tuned).
+# Per-role defaults for the Mixed preset: keep the normal Codex loop but let
+# users pin individual roles back to Claude Code.
 _MIXED_ROLE_DEFAULTS = {
     "plan": DEFAULT_HARNESS,
-    "prover": _CODEX_HARNESS,
+    "prover": DEFAULT_HARNESS,
     "review": DEFAULT_HARNESS,
 }
 
@@ -52,14 +49,14 @@ def selection_from_choice(choice: str, role_choices: dict | None = None):
     ``role_choices`` is the per-role ``{role: harness_name}`` mapping
     required when ``choice`` selects Mixed. Pure — no I/O.
 
-    Returns ``None`` (claude-code), ``"codex-gpt"``, or the (filtered)
+    Returns ``None``/``"codex-gpt"``, ``"claude-code"``, or the (filtered)
     role-choices dict. Raises ``ValueError`` on an unknown choice.
     """
     normalized = choice.strip().lower()
-    if normalized in ("1", "claude-code", "claude", "c"):
+    if normalized in ("1", CODEX_HARNESS, "codex", "x"):
         return None
-    if normalized in ("2", _CODEX_HARNESS, "codex", "x"):
-        return _CODEX_HARNESS
+    if normalized in ("2", CLAUDE_HARNESS, "claude", "c"):
+        return CLAUDE_HARNESS
     if normalized in ("3", "mixed", "m"):
         roles = dict(role_choices or {})
         return {r: roles[r] for r in LOOP_ROLES if r in roles}
@@ -67,27 +64,25 @@ def selection_from_choice(choice: str, role_choices: dict | None = None):
 
 
 def _prompt_role_choices() -> dict:
-    """Ask one harness per role for the Mixed preset (codex vs claude-code)."""
+    """Ask one harness per role for the Mixed preset."""
     log.step(
-        "Mixed mode: choose an engine per role. Tip: codex fits the prover; "
-        "plan/review work best on claude-code (their prompts assume Claude "
-        "Code tools like WebSearch/WebFetch and the codex variant is "
-        "prover-tuned)."
+        "Mixed mode: choose an engine per role. Codex is the default; "
+        "choose Claude Code only for roles you explicitly want to run there."
     )
     choices: dict[str, str] = {}
     for role in LOOP_ROLES:
         default_name = _MIXED_ROLE_DEFAULTS[role]
-        default_letter = "x" if default_name == _CODEX_HARNESS else "c"
+        default_letter = "x" if default_name == CODEX_HARNESS else "c"
         while True:
             ans = typer.prompt(
                 f"  {role:6s} engine — [c] claude-code  [x] codex-gpt",
                 default=default_letter,
             ).strip().lower()
-            if ans in ("c", "claude-code", "claude"):
-                choices[role] = DEFAULT_HARNESS
+            if ans in ("c", CLAUDE_HARNESS, "claude"):
+                choices[role] = CLAUDE_HARNESS
                 break
-            if ans in ("x", "codex-gpt", "codex"):
-                choices[role] = _CODEX_HARNESS
+            if ans in ("x", CODEX_HARNESS, "codex"):
+                choices[role] = CODEX_HARNESS
                 break
     return choices
 
@@ -95,14 +90,14 @@ def _prompt_role_choices() -> dict:
 def prompt_harness_selection():
     """Interactively ask which harness setup the project should use.
 
-    Returns an ``apply_harness_selection`` value (``None`` / ``"codex-gpt"``
+    Returns an ``apply_harness_selection`` value (``None`` / ``"claude-code"``
     / a ``{role: name}`` dict). Assumes a TTY — callers gate this with
     :func:`_is_interactive`.
     """
     typer.echo("")
     typer.echo("Which engine should run the loop's agents (plan / prover / review)?")
-    typer.echo("  [1] Claude Code + Opus 4.8   — default, recommended")
-    typer.echo("  [2] Codex CLI + GPT-5.5       — uses your native ~/.codex (ChatGPT) login")
+    typer.echo("  [1] Codex CLI + GPT-5.5       — default; uses your native ~/.codex login")
+    typer.echo("  [2] Claude Code + Opus        — requires Claude Code subscription/login")
     typer.echo("  [3] Mixed                     — pick an engine per role")
     typer.echo("")
 

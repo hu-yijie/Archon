@@ -8,6 +8,7 @@ True iff the dependency is now usable.
 from .api_keys import ApiKeysCheck
 from .base import DependencyCheck
 from .claude_code import ClaudeCodeCheck
+from .codex_cli import CodexCliCheck
 from .curl import CurlCheck
 from .dashboard_deps import DashboardDepsCheck
 from .git import GitCheck
@@ -30,6 +31,7 @@ __all__ = [
     "UvCheck",
     "RipgrepCheck",
     "ClaudeCodeCheck",
+    "CodexCliCheck",
     "GraphvizCheck",
     "TexToolchainCheck",
     "LeanBlueprintCheck",

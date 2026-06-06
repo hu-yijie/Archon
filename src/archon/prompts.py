@@ -672,7 +672,7 @@ def _subagent_catalog_block(project_path: Path, *, role: str) -> str:
     )
     lines.append("")
     lines.append("```")
-    lines.append("python3 .claude/tools/archon-subagent.py \\")
+    lines.append("python3 .archon/tools/archon-subagent.py \\")
     lines.append("  --name <name> \\")
     lines.append("  --slug <kebab-slug> \\")
     lines.append("  --directive-file <path-to-directive.md> \\")

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from archon import log
-from archon.agent import DEFAULT_HARNESS, build_runner
+from archon.agent import build_runner
 from archon.commands.tooling.project_config import HarnessDescriptor
 from archon.prompts import (
     build_parallel_prover_prompt,
@@ -36,14 +36,10 @@ from .environment import ProverEnvironment, snapshot_baseline
 
 
 def _default_harness() -> HarnessDescriptor:
-    """The built-in claude-code descriptor (zero-config default).
+    """The shipped default harness descriptor for pool worker fallbacks."""
+    from archon.commands.tooling.project_config import default_harness_descriptor
 
-    Used as the default for the prover runners so an unconfigured project
-    threads exactly the built-in claude-code runner — :func:`build_runner`
-    short-circuits a ``runner == "claude-code"`` descriptor to the legacy
-    :class:`~archon.agent.ClaudeAgent`.
-    """
-    return HarnessDescriptor(name=DEFAULT_HARNESS, runner=DEFAULT_HARNESS)
+    return default_harness_descriptor()
 
 
 def _run_single_prover(
@@ -63,7 +59,7 @@ def _run_single_prover(
     (a frozen dataclass) — not a bare name string — so the worker can
     build a fully-configured runner (model / effort / gateway for codex)
     via :func:`build_runner` without re-reading config. ``None`` →
-    built-in claude-code.
+    the shipped default harness.
     """
     descriptor = harness if harness is not None else _default_harness()
     if snap_dir is not None and project_path is not None:

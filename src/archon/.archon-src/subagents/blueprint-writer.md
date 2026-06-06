@@ -205,7 +205,7 @@ Conditions for dispatch:
 Dispatch (Bash; treat as blocking and await the report; in your write-domain only if it includes `references/**`):
 
 ```
-python3 .claude/tools/archon-subagent.py \
+python3 .archon/tools/archon-subagent.py \
   --name reference-retriever \
   --slug <kebab-slug-for-the-source> \
   --directive-file .archon/logs/iter-NNN/<your-slug>/reference-retriever-<child-slug>-directive.md \

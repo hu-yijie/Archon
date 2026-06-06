@@ -9,6 +9,7 @@ from archon import log
 from .checks import (
     ApiKeysCheck,
     ClaudeCodeCheck,
+    CodexCliCheck,
     CurlCheck,
     DashboardDepsCheck,
     GitCheck,
@@ -40,7 +41,7 @@ class SetupCommand:
     def run(self) -> None:
         self._check_prerequisites()
         self._check_python_tooling()
-        self._check_claude_code()
+        self._check_codex_cli()
         self._check_blueprint_deps()
         self._check_dashboard()
         self._check_api_keys()
@@ -65,8 +66,12 @@ class SetupCommand:
         RipgrepCheck(self.installer).run()
         PopplerCheck(self.installer).run()
 
+    def _check_codex_cli(self) -> None:
+        log.rule("Codex CLI")
+        CodexCliCheck(self.installer).run()
+
     def _check_claude_code(self) -> None:
-        log.rule("Claude Code")
+        log.rule("Claude Code (optional)")
         ClaudeCodeCheck(self.installer).run()
 
     def _check_blueprint_deps(self) -> None:

@@ -1,6 +1,8 @@
-"""Register the lean-lsp MCP server in the project's Claude config."""
+"""Register the lean-lsp MCP server in Claude config when Claude is selected."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from archon import log
 
@@ -10,11 +12,18 @@ from .base import InitStep
 
 class LeanLspMcpStep(InitStep):
     name = "Installing lean-lsp MCP server (project scope)"
-    number = 4
+    number = 5
 
     def run(self) -> None:
         ctx = self.ctx
         log.phase(self.number, self.name)
+
+        if not _project_uses_claude(ctx.project_path):
+            log.step(
+                "Codex harness selected — skipping Claude MCP registration "
+                "(Codex receives Lean LSP via per-invocation config)"
+            )
+            return
 
         lean_lsp_dir = data_path("tools/lean-lsp-mcp")
 
@@ -48,3 +57,19 @@ class LeanLspMcpStep(InitStep):
             log.success("archon-lean-lsp added")
         else:
             log.error(f"Failed to add archon-lean-lsp: {output.strip()}")
+
+
+def _project_uses_claude(project_path: Path) -> bool:
+    from archon.agent import CLAUDE_HARNESS
+    from archon.commands.tooling.project_config import (
+        load_harness_descriptor,
+        load_project_config,
+        resolve_role_harness,
+    )
+
+    cfg = load_project_config(project_path)
+    for role in ("plan", "prover", "review"):
+        name = resolve_role_harness(cfg, role)
+        if load_harness_descriptor(cfg, name).runner == CLAUDE_HARNESS:
+            return True
+    return False

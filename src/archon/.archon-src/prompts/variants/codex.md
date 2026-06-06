@@ -6,7 +6,8 @@ native tools, not Claude tool names:
 - **Edit files** with `apply_patch` (not the Claude `Edit`/`Write` tools).
 - **Run commands** — `lake build`, `lake env lean <file>`, any
   verification — with `exec_command` / the shell.
-- **Read files** with `read_file`.
+- **Read files** with `exec_command` (`rg`, `sed`, `cat`) or other native
+  Codex file tools available in the current session.
 
 If a Lean LSP is available as MCP tools (server `archon-lean-lsp`),
 prefer it for fast diagnostics — `lean_goal`, `lean_diagnostics`,

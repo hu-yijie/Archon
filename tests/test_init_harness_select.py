@@ -5,9 +5,8 @@ Covers three layers:
 * the config helpers in ``project_config`` — the shipped (inert)
   ``harnesses`` block, ``apply_harness_selection``, and the
   ``harness_selection``-aware ``write_default_config``;
-* the **zero-regression invariant** — the shipped default config must not
-  trip the ``build_runner`` short-circuit (every role still builds exactly
-  the legacy ``ClaudeAgent``);
+* the Codex-first default — the shipped default config routes every role
+  to the Codex descriptor unless the user explicitly chooses Claude Code;
 * the pure menu mapping ``selection_from_choice`` and the non-interactive
   resolution in ``harness_select`` (no stdin driven).
 """
@@ -47,8 +46,8 @@ class DefaultConfigHarnessesTest(unittest.TestCase):
     def test_harnesses_block_is_shipped(self):
         dc = default_config()
         self.assertIn("harnesses", dc)
-        # The codex descriptor ships; no claude-code descriptor (so the
-        # zero-config fast path is preserved — see below).
+        # The codex descriptor ships; no claude-code descriptor is needed
+        # because Claude Code is a built-in explicit harness.
         self.assertIn("codex-gpt", dc["harnesses"])
         self.assertNotIn("claude-code", dc["harnesses"])
 
@@ -63,16 +62,13 @@ class DefaultConfigHarnessesTest(unittest.TestCase):
         self.assertIsNone(d.base_url_env)
         self.assertIsNone(d.key_env)
 
-    def test_zero_regression_with_shipped_default_config(self):
-        # The shipped harnesses block is inert: with no loop.harness /
-        # loop.roles key, every role still builds exactly ClaudeAgent.
+    def test_shipped_default_config_routes_to_codex(self):
         cfg = ProjectConfig(raw=default_config())
         for role in ("plan", "prover", "review"):
             with self.subTest(role=role):
                 self.assertEqual(resolve_role_harness(cfg, role), DEFAULT_HARNESS)
-                self.assertEqual(
-                    build_runner(role=role, model="opus", cfg=cfg),
-                    ClaudeAgent(model="opus", role=role),
+                self.assertIsInstance(
+                    build_runner(role=role, model="opus", cfg=cfg), CodexAgent,
                 )
 
 
@@ -87,12 +83,12 @@ class ApplyHarnessSelectionTest(unittest.TestCase):
 
     def test_none_is_noop(self):
         loop = self._loop(None)
-        self.assertNotIn("harness", loop)
+        self.assertEqual(loop["harness"], "codex-gpt")
         self.assertNotIn("roles", loop)
 
-    def test_claude_code_string_is_noop(self):
+    def test_claude_code_string_sets_loop_harness(self):
         loop = self._loop("claude-code")
-        self.assertNotIn("harness", loop)
+        self.assertEqual(loop["harness"], "claude-code")
         self.assertNotIn("roles", loop)
 
     def test_codex_string_sets_loop_harness(self):
@@ -104,18 +100,20 @@ class ApplyHarnessSelectionTest(unittest.TestCase):
         loop = self._loop(
             {"plan": "claude-code", "prover": "codex-gpt", "review": "claude-code"}
         )
-        self.assertNotIn("harness", loop)
-        self.assertEqual(loop["roles"], {"prover": "codex-gpt"})
+        self.assertEqual(loop["harness"], "codex-gpt")
+        self.assertEqual(loop["roles"], {"plan": "claude-code", "review": "claude-code"})
 
     def test_all_default_mixed_writes_nothing(self):
         loop = self._loop(
-            {"plan": "claude-code", "prover": "claude-code", "review": "claude-code"}
+            {"plan": "codex-gpt", "prover": "codex-gpt", "review": "codex-gpt"}
         )
+        self.assertEqual(loop["harness"], "codex-gpt")
         self.assertNotIn("roles", loop)
 
     def test_unknown_roles_ignored(self):
         loop = self._loop({"bogus": "codex-gpt", "prover": "codex-gpt"})
-        self.assertEqual(loop["roles"], {"prover": "codex-gpt"})
+        self.assertEqual(loop["harness"], "codex-gpt")
+        self.assertNotIn("roles", loop)
 
     def test_bad_type_raises(self):
         with self.assertRaises(TypeError):
@@ -158,12 +156,12 @@ class WriteDefaultConfigTest(unittest.TestCase):
                 ClaudeAgent(model="opus", role="plan"),
             )
 
-    def test_default_selection_is_plain_claude_code(self):
+    def test_default_selection_is_plain_codex(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = Path(tmp)
             write_default_config(project, harness_selection=None)
             cfg = load_project_config(project)
-            self.assertNotIn("harness", cfg.raw["loop"])
+            self.assertEqual(cfg.raw["loop"]["harness"], "codex-gpt")
             self.assertNotIn("roles", cfg.raw["loop"])
 
     def test_existing_config_is_not_overwritten(self):
@@ -184,8 +182,8 @@ class SelectionFromChoiceTest(unittest.TestCase):
     def test_choice_one_is_default(self):
         self.assertIsNone(selection_from_choice("1"))
 
-    def test_choice_two_is_codex(self):
-        self.assertEqual(selection_from_choice("2"), "codex-gpt")
+    def test_choice_two_is_claude(self):
+        self.assertEqual(selection_from_choice("2"), "claude-code")
 
     def test_choice_three_returns_role_choices_filtered_to_known_roles(self):
         sel = selection_from_choice(
@@ -199,8 +197,8 @@ class SelectionFromChoiceTest(unittest.TestCase):
         )
 
     def test_named_aliases(self):
-        self.assertIsNone(selection_from_choice("claude-code"))
-        self.assertEqual(selection_from_choice("codex-gpt"), "codex-gpt")
+        self.assertIsNone(selection_from_choice("codex-gpt"))
+        self.assertEqual(selection_from_choice("claude-code"), "claude-code")
 
     def test_unknown_choice_raises(self):
         with self.assertRaises(ValueError):
@@ -218,23 +216,18 @@ class ResolveHarnessSelectionTest(unittest.TestCase):
     def test_no_flag_shows_menu(self):
         with mock.patch(
             "archon.commands.init.steps.harness_select.prompt_harness_selection",
-            return_value="codex-gpt",
+            return_value=None,
         ) as menu:
-            self.assertEqual(
-                resolve_harness_selection(SimpleNamespace(harness=None)),
-                "codex-gpt",
-            )
+            self.assertIsNone(resolve_harness_selection(SimpleNamespace(harness=None)))
             menu.assert_called_once()
 
     def test_flag_codex_resolves_without_prompt(self):
-        self.assertEqual(
-            resolve_harness_selection(SimpleNamespace(harness="codex-gpt")),
-            "codex-gpt",
-        )
+        self.assertIsNone(resolve_harness_selection(SimpleNamespace(harness="codex-gpt")))
 
-    def test_flag_claude_code_is_none(self):
-        self.assertIsNone(
-            resolve_harness_selection(SimpleNamespace(harness="claude-code"))
+    def test_flag_claude_code_resolves(self):
+        self.assertEqual(
+            resolve_harness_selection(SimpleNamespace(harness="claude-code")),
+            "claude-code",
         )
 
     def test_flag_mixed_prompts_per_role(self):

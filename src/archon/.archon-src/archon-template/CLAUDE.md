@@ -7,16 +7,15 @@ You are one of: the plan agent, a prover agent, a subagent (per descriptor in `.
 When instructions conflict between global and local sources, **local takes precedence**:
 
 - Prompts in `.archon/prompts/` override Archon's global prompts.
-- Skills in `.claude/skills/` override globally installed plugins.
-- Rules in `.claude/rules/` apply only to this project.
+- Project-local instructions in `.archon/` override global Archon defaults.
 
 ## Skills
 
-- **archon-lean4** — installed as `lean4@archon-local` plugin (live-linked to Archon source). Provides `/archon-lean4:prove`, `/archon-lean4:golf`, `/archon-lean4:doctor`, etc.
+- **archon-lean-lsp** — available through MCP when the harness supports it. Prefer the Lean LSP MCP tools for goals, diagnostics, declarations, and searches before falling back to shell commands.
 
 ## Tools
 
-Project tools live in `.claude/tools/` as directly-executable scripts. List with `ls .claude/tools/`; run `<path> --help`. MCP servers (Lean LSP, etc.) are registered in `.claude/settings.json` / `.mcp.json` and surface as `mcp__*` tools.
+Project tools live in `.archon/tools/` as directly-executable scripts. List with `ls .archon/tools/`; run `<path> --help`. MCP servers (Lean LSP, etc.) surface as `mcp__*` tools when the selected harness exposes them.
 
 Two always-present scripts:
 
@@ -25,14 +24,14 @@ Two always-present scripts:
 
 ## Subagents
 
-Subagents are descriptor files at `.archon/subagents/<name>.md` (YAML frontmatter — `name`, `description`, `write_domain`, `read_only`, `can_spawn`, `default_enabled`, optional `mandatory: [<phase>...]`, optional `dispatcher_notes` — followed by the prompt body the spawned Claude reads).
+Subagents are descriptor files at `.archon/subagents/<name>.md` (YAML frontmatter — `name`, `description`, `write_domain`, `read_only`, `can_spawn`, `default_enabled`, optional `mandatory: [<phase>...]`, optional `dispatcher_notes` — followed by the prompt body the spawned agent reads).
 
 **You do NOT need to discover subagents.** The plan and review prompts auto-inject an **Available subagents** section at the top of each invocation listing every enabled descriptor with description, write-domain, MANDATORY flag, and `dispatcher_notes`. When you decide to invoke a subagent, read its full prompt at `.archon/subagents/<name>.md`.
 
 **Invoke** via the generic wrapper (Bash tool, foreground):
 
 ```
-python3 .claude/tools/archon-subagent.py \
+python3 .archon/tools/archon-subagent.py \
   --name <subagent-name> \
   --slug <kebab-slug> \
   --directive-file <path-to-directive.md> \

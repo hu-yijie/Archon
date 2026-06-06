@@ -5,8 +5,8 @@ LLM providers in parallel on the same Lean files. The merge agent then picks
 the best proof per declaration across the lanes' outputs.
 
 You only need this if you want to run multiple providers in parallel.
-A single Anthropic lane (the default) is the normal flow and needs no setup
-beyond the interactive Claude Code login that `archon init` does for you.
+The normal Archon flow uses the single-lane prover path, which defaults to the
+Codex harness in this fork and needs no multi-lane setup.
 
 ## TL;DR
 
@@ -20,7 +20,9 @@ To turn multilane on:
 1. Put your provider keys in `.archon/.env` (uncomment the relevant block).
 2. In `.archon/config.json`, set `multilane.enabled: true` and copy the
    relevant lane entry from `multilane._examples` into `multilane.lanes`.
-3. Run `archon loop` — multilane fires automatically when `enabled` is true.
+3. Make sure Claude Code is installed and authenticated. Multi-lane lane
+   attribution is still Claude Code-only.
+4. Run `archon loop` — multilane fires automatically when `enabled` is true.
 
 That's it. You don't need to touch any CLI flag.
 

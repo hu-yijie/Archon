@@ -1,44 +1,91 @@
-"""Pre-loop sanity checks: claude availability, project state, env keys."""
+"""Pre-loop sanity checks: driver availability, project state, env keys."""
 
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 import typer
 
 from archon import log
+from archon.agent import CLAUDE_HARNESS
 from archon.commands.tooling.inner_git import InnerGit
+from archon.commands.tooling.project_config import (
+    load_harness_descriptor,
+    load_project_config,
+    resolve_role_harness,
+)
 from archon.state import read_stage
 
 
 def preflight(project_path: Path, state_dir: Path, dry_run: bool) -> None:
-    """Verify claude is installed/auth'd and the project has been init'd."""
+    """Verify the selected driver is installed/auth'd and the project is init'd."""
     progress = state_dir / "PROGRESS.md"
 
     if not dry_run:
-        if not shutil.which("claude"):
-            log.error("Claude Code is not installed. Run: archon setup")
-            raise typer.Exit(1)
-        r = subprocess.run(
-            ["claude", "-p", "reply with OK", "--no-session-persistence"],
-            capture_output=True, text=True,
-        )
-        if r.returncode != 0:
-            log.error("Claude Code cannot run. Check: claude auth, ANTHROPIC_API_KEY, network.")
-            # raise typer.Exit(1)
-        log.success("Claude Code is authenticated and ready")
+        _check_selected_drivers(project_path)
 
     if not progress.exists():
         log.error(f"No project state found. Run: archon init {project_path}")
         raise typer.Exit(1)
-
     stage = read_stage(progress)
     if stage == "init":
         log.error(f"Project is still in init stage. Run: archon init {project_path}")
         raise typer.Exit(1)
+
+
+def _check_selected_drivers(project_path: Path) -> None:
+    cfg = load_project_config(project_path)
+    roles = ("plan", "prover", "review")
+    runners = {
+        load_harness_descriptor(
+            cfg, resolve_role_harness(cfg, role),
+        ).runner
+        for role in roles
+    }
+    if "codex" in runners:
+        _check_codex()
+    if CLAUDE_HARNESS in runners:
+        _check_claude()
+
+
+def _check_codex() -> None:
+    try:
+        r = subprocess.run(
+            ["codex", "login", "status"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        log.error("Codex CLI is not installed. Run: archon setup")
+        raise typer.Exit(1) from None
+    if r.returncode == 127 or "No such file" in (r.stderr or ""):
+        log.error("Codex CLI is not installed. Run: archon setup")
+        raise typer.Exit(1)
+    if r.returncode != 0:
+        log.error("Codex CLI is not authenticated. Run: codex login")
+        raise typer.Exit(1)
+    log.success("Codex CLI is authenticated and ready")
+
+
+def _check_claude() -> None:
+    try:
+        r = subprocess.run(
+            ["claude", "-p", "reply with OK", "--no-session-persistence"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        log.error("Claude Code is not installed. Run: archon setup")
+        raise typer.Exit(1) from None
+    if r.returncode == 127 or "No such file" in (r.stderr or ""):
+        log.error("Claude Code is not installed. Run: archon setup")
+        raise typer.Exit(1)
+    if r.returncode != 0:
+        log.error("Claude Code cannot run. Check: claude auth, ANTHROPIC_API_KEY, network.")
+        raise typer.Exit(1)
+    log.success("Claude Code is authenticated and ready")
 
 
 def warn_if_lake_unbuilt(project_path: Path) -> None:

@@ -1,15 +1,14 @@
-"""Tests for the Phase-1 harness router seam.
+"""Tests for the harness router seam.
 
 Covers the responsibility → harness routing layer introduced as a pure
 refactor: the per-role / per-subagent harness resolvers, the
-``build_runner`` factory (including the zero-regression invariant and
-the unknown-harness error), the harness descriptor loader, the optional
-subagent ``harness`` frontmatter, and the forward-compat
+``build_runner`` factory (including the unknown-harness error), the
+harness descriptor loader, the optional subagent ``harness`` frontmatter,
+and the forward-compat
 ``LaneConfig.harness`` field.
 
-In Phase 1 the only runner is ``"claude-code"``; with no new config keys
-present every path must resolve to it, and the factory must return
-exactly the legacy ``ClaudeAgent`` object.
+This branch keeps ``"claude-code"`` as an explicit built-in runner while
+making ``"codex-gpt"`` the unconfigured/default harness.
 """
 
 from __future__ import annotations
@@ -19,12 +18,13 @@ import unittest
 from pathlib import Path
 
 from archon.agent import (
-    DEFAULT_HARNESS,
+    CLAUDE_HARNESS,
     AgentRunner,
     ClaudeAgent,
     UnknownHarnessError,
     build_runner,
 )
+from archon.agents.codex import CodexAgent
 from archon.commands.tooling.project_config import (
     HarnessDescriptor,
     ProjectConfig,
@@ -43,8 +43,8 @@ from archon.subagents.registry import parse_descriptor_file
 
 
 class ResolveRoleHarnessTest(unittest.TestCase):
-    def test_empty_config_is_claude_code(self):
-        self.assertEqual(resolve_role_harness(ProjectConfig(), "plan"), "claude-code")
+    def test_empty_config_is_codex(self):
+        self.assertEqual(resolve_role_harness(ProjectConfig(), "plan"), "codex-gpt")
 
     def test_loop_harness_applies_to_all_roles(self):
         cfg = ProjectConfig(raw={"loop": {"harness": "h-loop"}})
@@ -82,9 +82,9 @@ class ResolveRoleHarnessTest(unittest.TestCase):
 
 
 class ResolveSubagentHarnessTest(unittest.TestCase):
-    def test_empty_config_is_claude_code(self):
+    def test_empty_config_is_codex(self):
         self.assertEqual(
-            resolve_subagent_harness(ProjectConfig(), "lean-auditor"), "claude-code"
+            resolve_subagent_harness(ProjectConfig(), "lean-auditor"), "codex-gpt"
         )
 
     def test_subagent_override_wins(self):
@@ -122,7 +122,7 @@ class ResolveSubagentHarnessTest(unittest.TestCase):
         # must not be picked up as a harness name.
         cfg = ProjectConfig(raw={"subagents": {"lean-auditor": "haiku"}})
         self.assertEqual(
-            resolve_subagent_harness(cfg, "lean-auditor"), "claude-code"
+            resolve_subagent_harness(cfg, "lean-auditor"), "codex-gpt"
         )
 
 
@@ -164,31 +164,31 @@ class LoadHarnessDescriptorTest(unittest.TestCase):
 
 
 class BuildRunnerTest(unittest.TestCase):
-    def test_default_returns_claude_agent(self):
+    def test_default_returns_codex_agent(self):
         r = build_runner(role="plan", model="opus")
-        self.assertIsInstance(r, ClaudeAgent)
+        self.assertIsInstance(r, CodexAgent)
         self.assertIsInstance(r, AgentRunner)
-        self.assertEqual(r.model, "opus")
+        self.assertEqual(r.model, "gpt-5.5")
         self.assertEqual(r.role, "plan")
 
-    def test_zero_regression_invariant_empty_config(self):
-        # Empty config, role X => exactly ClaudeAgent(model=m, role=X).
-        # ClaudeAgent is a dataclass, so == compares all fields, proving
-        # the factory returns the same object the call site built before
-        # this PR.
+    def test_empty_config_uses_codex(self):
         for role in ("plan", "prover", "review"):
             with self.subTest(role=role):
                 got = build_runner(role=role, model="opus", cfg=ProjectConfig())
-                self.assertEqual(got, ClaudeAgent(model="opus", role=role))
+                self.assertIsInstance(got, CodexAgent)
 
-    def test_zero_regression_invariant_no_cfg(self):
-        # No cfg at all => same short-circuit.
+    def test_no_cfg_uses_codex(self):
         got = build_runner(role="prover", model="sonnet")
-        self.assertEqual(got, ClaudeAgent(model="sonnet", role="prover"))
+        self.assertIsInstance(got, CodexAgent)
 
     def test_explicit_claude_code_descriptor_model_override(self):
         cfg = ProjectConfig(
-            raw={"harnesses": {"claude-code": {"runner": "claude-code", "model": "haiku"}}}
+            raw={
+                "loop": {"harness": "claude-code"},
+                "harnesses": {
+                    "claude-code": {"runner": "claude-code", "model": "haiku"}
+                },
+            }
         )
         r = build_runner(role="review", model="opus", cfg=cfg)
         self.assertIsInstance(r, ClaudeAgent)
@@ -208,7 +208,7 @@ class BuildRunnerTest(unittest.TestCase):
             build_runner(role="prover", model="opus", cfg=cfg)
         msg = str(cm.exception)
         self.assertIn("gemini", msg)
-        self.assertIn(DEFAULT_HARNESS, msg)
+        self.assertIn(CLAUDE_HARNESS, msg)
 
     def test_unknown_harness_passed_directly_raises(self):
         # The harness name can be passed pre-resolved (e.g. by the prover
@@ -235,7 +235,7 @@ class SubagentHarnessFrontmatterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = _write(Path(d), "foo", "name: foo\ndescription: t")
             desc = parse_descriptor_file(p)
-            self.assertEqual(desc.harness, "claude-code")
+            self.assertIsNone(desc.harness)
 
     def test_harness_parsed_when_present(self):
         with tempfile.TemporaryDirectory() as d:

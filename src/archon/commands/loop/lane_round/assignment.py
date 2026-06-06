@@ -14,7 +14,7 @@ import traceback
 from pathlib import Path
 
 from archon import log
-from archon.agent import DEFAULT_HARNESS, build_runner
+from archon.agent import CLAUDE_HARNESS, build_runner
 from archon.commands.tooling.project_config import HarnessDescriptor
 from archon.multilane.dispatch import build_assignment_prompt
 from archon.state import utcnow_iso
@@ -62,11 +62,11 @@ class LaneAssignmentRunner:
         self.lane_env = lane_env
         self.cancel_event = cancel_event
         # The lane's resolved harness descriptor (from LaneConfig.harness,
-        # resolved at the dispatch site). None → built-in claude-code, so
-        # an unconfigured lane builds exactly the legacy ClaudeAgent.
+        # resolved at the dispatch site). Multilane attribution is still
+        # Claude Code-only, so an unconfigured lane uses that built-in runner.
         self.harness = (
             harness if harness is not None
-            else HarnessDescriptor(name=DEFAULT_HARNESS, runner=DEFAULT_HARNESS)
+            else HarnessDescriptor(name=CLAUDE_HARNESS, runner=CLAUDE_HARNESS)
         )
 
         self.lane_path = Path(assignment.worktree_path)

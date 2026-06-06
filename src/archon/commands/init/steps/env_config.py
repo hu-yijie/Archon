@@ -15,7 +15,7 @@ from .base import InitStep
 
 class EnvAndConfigStep(InitStep):
     name = "Project config (.archon/config.json) and .env"
-    number = 9
+    number = 4
 
     def run(self) -> None:
         from archon.commands.tooling import env_loader, project_config
@@ -54,12 +54,12 @@ class EnvAndConfigStep(InitStep):
 def _describe_selection(selection: object) -> str:
     """One-line human summary of the resolved harness selection for logs."""
     if selection is None:
-        return "claude-code (default)"
+        return "codex-gpt (default)"
     if isinstance(selection, str):
         return f"{selection} (all roles)"
     if isinstance(selection, dict):
         if not selection:
-            return "claude-code (default)"
+            return "codex-gpt (default)"
         roles = ", ".join(f"{r}={n}" for r, n in selection.items())
-        return f"mixed ({roles}; others claude-code)"
+        return f"mixed ({roles}; others codex-gpt)"
     return str(selection)

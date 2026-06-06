@@ -48,7 +48,7 @@ When the substantive type is unattainable this iter, you have one honest move: l
 
 Do NOT report "Mathlib lacks X" and stop. Before giving up:
 
-1. **Use the informal agent** (`.claude/tools/archon-informal-agent.py`): "Prove [goal] without using [missing infrastructure], only Mathlib." Even an imperfect sketch is valuable.
+1. **Use the informal agent** (`.archon/tools/archon-informal-agent.py`): "Prove [goal] without using [missing infrastructure], only Mathlib." Even an imperfect sketch is valuable.
 2. **Try the alternative** — formalize whatever the informal agent suggests.
 3. **If you still can't**: write the alternative sketch to `informal/<theorem_name>.md` and record in your task result what you tried, why it failed, AND the alternative route you found. "I couldn't prove X, but here's approach Y that might work because Z" is far more useful than "infrastructure missing".
 

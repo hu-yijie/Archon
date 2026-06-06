@@ -13,7 +13,6 @@ from pathlib import Path
 import typer
 
 from archon import log
-from archon.agent import DEFAULT_MODEL
 from archon.commands.tooling.version import warn_if_mismatch
 
 from .context import InitContext
@@ -43,7 +42,7 @@ class InitCommand:
         project_path: str | None,
         *,
         force: bool = False,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         harness: str | None = None,
     ) -> None:
         self.project_path_arg = project_path
@@ -70,9 +69,7 @@ class InitCommand:
 
         warn_if_mismatch(resolved)
 
-        if not has("claude"):
-            log.error("Claude Code is not installed. Run: archon setup")
-            raise typer.Exit(1)
+        self._check_driver_available(resolved)
 
         self.ctx = InitContext(
             project_path=resolved,
@@ -133,6 +130,31 @@ class InitCommand:
             log.success(f"Created directory {resolved}")
         return resolved
 
+    def _check_driver_available(self, project_path: Path) -> None:
+        """Fail early if the configured/default init driver is unavailable."""
+        from archon.agent import CLAUDE_HARNESS
+        from archon.commands.tooling.project_config import (
+            load_harness_descriptor,
+            load_project_config,
+            resolve_role_harness,
+        )
+
+        cfg = load_project_config(project_path)
+        harness_name = resolve_role_harness(cfg, "plan")
+        runner = load_harness_descriptor(cfg, harness_name).runner
+        if runner == CLAUDE_HARNESS:
+            if not has("claude"):
+                log.error("Claude Code is not installed. Run: archon setup")
+                raise typer.Exit(1)
+            return
+        if runner == "codex":
+            if not has("codex"):
+                log.error("Codex CLI is not installed. Run: archon setup")
+                raise typer.Exit(1)
+            return
+        log.error(f"Configured init driver {runner!r} is not supported")
+        raise typer.Exit(1)
+
     def _resolve_reinit_mode(self) -> str:
         """Return one of 'fresh', 'keep', 'merge', 'overwrite', 'abort'."""
         ctx = self.ctx
@@ -149,20 +171,21 @@ class InitCommand:
         """Verify-only path — keep existing setup, refresh registrations."""
         log.info("Keeping existing setup. Verifying MCP / plugin registration only.")
         for step_cls in (
-            LeanLspMcpStep, SkillsStep, DisableConflictingPluginsStep,
-            ReportProtectedStep, EnvAndConfigStep, InnerGitStep,
+            EnvAndConfigStep, LeanLspMcpStep, SkillsStep,
+            DisableConflictingPluginsStep, ReportProtectedStep, InnerGitStep,
             GitHooksStep, VersionStampStep,
         ):
             step_cls(self.ctx).run()
         log.success("Verification complete.")
 
     def _run_full_init(self) -> None:
-        """Deterministic setup → optional Claude semantic pass → final stamps."""
+        """Deterministic setup → optional agent semantic pass → final stamps."""
         ctx = self.ctx
 
         for step_cls in (
             StateDirStep, CopyPromptsStep, BootstrapStep,
-            LeanLspMcpStep, SkillsStep, DisableConflictingPluginsStep,
+            EnvAndConfigStep, LeanLspMcpStep, SkillsStep,
+            DisableConflictingPluginsStep,
         ):
             step_cls(ctx).run()
 
@@ -178,7 +201,6 @@ class InitCommand:
         # config.json, and the hook is installed against the git-dir
         # that was just created).
         for step_cls in (
-            ReportProtectedStep, EnvAndConfigStep, InnerGitStep,
-            GitHooksStep, VersionStampStep,
+            ReportProtectedStep, InnerGitStep, GitHooksStep, VersionStampStep,
         ):
             step_cls(ctx).run()

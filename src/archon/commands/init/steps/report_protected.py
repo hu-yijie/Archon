@@ -20,7 +20,7 @@ class ReportProtectedStep(InitStep):
     """
 
     name = "Protected declarations"
-    number = 8
+    number = 9
 
     def run(self) -> None:
         ctx = self.ctx

@@ -137,7 +137,7 @@ def prove(
     ),
     verbose_logs: bool = typer.Option(
         False, "--verbose-logs",
-        help="Save raw Claude stream events to .raw.jsonl.",
+        help="Save raw agent stream events to .raw.jsonl.",
     ),
     no_review: bool = typer.Option(
         False, "--no-review",
@@ -145,7 +145,7 @@ def prove(
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run",
-        help="Print prompts without launching Claude.",
+        help="Print prompts without launching an agent.",
     ),
 ) -> None:
     """Launch a proof loop for a given statement."""

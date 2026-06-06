@@ -1,7 +1,7 @@
 """`archon refactor draft` and `archon refactor run`.
 
 Two-phase design:
-  - `draft`  : launches Claude interactively to interview the user and
+  - `draft`  : launches the configured driver interactively to interview the user and
                produce a well-formed REFACTOR_DIRECTIVE.md. The mathematician
                reviews / edits the directive before step two.
   - `run`    : reads the directive, invokes the refactor agent in autonomous
@@ -15,14 +15,14 @@ the directive can churn for hours.
 from __future__ import annotations
 
 import re
-import shutil
 from pathlib import Path
 from textwrap import dedent
 
 import typer
 
 from archon import log
-from archon.agent import ClaudeAgent, DEFAULT_MODEL
+from archon.agent import build_runner
+from archon.commands.tooling.project_config import load_project_config
 from archon.commands.tooling.inner_git import InnerGit
 from archon.commands.tooling.iteration import commit_phase
 from archon.commands.tooling.version import warn_if_mismatch
@@ -83,7 +83,7 @@ class RefactorDraftCommand:
         project_path: str,
         *,
         auto_run: bool = False,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         self.project_path = project_path
         self.auto_run = auto_run
@@ -93,15 +93,14 @@ class RefactorDraftCommand:
         resolved, state_dir = _resolve_project(self.project_path)
         warn_if_mismatch(resolved)
 
-        if not shutil.which("claude"):
-            log.error("Claude Code is not installed. Run: archon setup")
-            raise typer.Exit(1)
-
         log.header("archon refactor draft")
-        log.step("Launching Claude to interview you and write REFACTOR_DIRECTIVE.md.")
+        log.step("Launching the configured driver to interview you and write REFACTOR_DIRECTIVE.md.")
 
         prompt = self._build_prompt(resolved, state_dir)
-        ClaudeAgent(model=self.model, role="refactor-draft").run_interactive(
+        cfg = load_project_config(resolved)
+        build_runner(
+            role="refactor-draft", model=self.model, cfg=cfg,
+        ).run_interactive(
             prompt, cwd=resolved,
         )
 
@@ -142,7 +141,7 @@ class RefactorRunCommand:
         project_path: str,
         *,
         verbose_logs: bool = False,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         self.project_path = project_path
         self.verbose_logs = verbose_logs
@@ -151,10 +150,6 @@ class RefactorRunCommand:
     def run(self) -> None:
         resolved, state_dir = _resolve_project(self.project_path)
         warn_if_mismatch(resolved)
-
-        if not shutil.which("claude"):
-            log.error("Claude Code is not installed. Run: archon setup")
-            raise typer.Exit(1)
 
         directive = _read_directive(state_dir)
         if directive is None:
@@ -288,18 +283,19 @@ def draft(
         False, "--auto-run",
         help="Immediately launch `archon refactor run` after the draft is written.",
     ),
-    model: str = typer.Option(
-        DEFAULT_MODEL, "--model", "-M",
+    model: str | None = typer.Option(
+        None, "--model", "-M",
         help=(
-            "Model alias. Anthropic: 'opus', 'sonnet', 'haiku' or a full id. "
-            "Non-Anthropic (uses .archon/.env credentials): 'kimi', 'deepseek'."
+            "Model override for Claude Code harnesses. Codex uses the "
+            "configured harness descriptor."
         ),
     ),
 ) -> None:
     """Interview the user and write a REFACTOR_DIRECTIVE.md.
 
-    Claude walks the user through the five required sections (problem,
-    justification, changes, risk, rollback). The directive is written to
+    The configured interactive driver walks the user through the five
+    required sections (problem, justification, changes, risk, rollback).
+    The directive is written to
     `.archon/REFACTOR_DIRECTIVE.md`. By default, the refactor agent is NOT
     launched — the user is expected to review the directive first and
     then run `archon refactor run`.
@@ -312,13 +308,13 @@ def run(
     project_path: str = typer.Argument(".", help="Path to Lean project"),
     verbose_logs: bool = typer.Option(
         False, "--verbose-logs",
-        help="Save raw Claude stream events to .raw.jsonl.",
+        help="Save raw agent stream events to .raw.jsonl.",
     ),
-    model: str = typer.Option(
-        DEFAULT_MODEL, "--model", "-M",
+    model: str | None = typer.Option(
+        None, "--model", "-M",
         help=(
-            "Model alias. Anthropic: 'opus', 'sonnet', 'haiku' or a full id. "
-            "Non-Anthropic (uses .archon/.env credentials): 'kimi', 'deepseek'."
+            "Model override for Claude Code harnesses. Codex uses the "
+            "configured harness descriptor."
         ),
     ),
 ) -> None:

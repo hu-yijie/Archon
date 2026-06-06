@@ -123,6 +123,31 @@ class ClaudeCodeDoctorCheck(DoctorCheck):
         return rows
 
 
+class CodexCliDoctorCheck(DoctorCheck):
+    title = "Codex CLI"
+
+    def __init__(self, *, skip_auth: bool = False) -> None:
+        self.skip_auth = skip_auth
+
+    def run(self) -> list[CheckRow]:
+        rows: list[CheckRow] = []
+        if not _has("codex"):
+            rows.append(("codex", "error", "not installed — install Codex CLI and run: codex login"))
+            return rows
+
+        if self.skip_auth:
+            rows.append(("codex", "ok", f"{_version(['codex', '--version'])} (auth skipped)"))
+            return rows
+
+        rows.append(("codex", "ok", _version(["codex", "--version"])))
+        r = _run(["codex", "login", "status"])
+        if r.returncode == 0:
+            rows.append(("codex auth", "ok", "authenticated"))
+        else:
+            rows.append(("codex auth", "error", "not authenticated — run: codex login"))
+        return rows
+
+
 class ApiKeysDoctorCheck(DoctorCheck):
     title = "API keys"
 
@@ -314,6 +339,27 @@ class ProjectClaudeDoctorCheck(DoctorCheck):
         return rows
 
 
+class ProjectToolsDoctorCheck(DoctorCheck):
+    """Check Archon-owned project tools under `.archon/tools/`."""
+
+    title = "Project Archon tools"
+
+    def __init__(self, project_path: Path) -> None:
+        self.project_path = project_path
+
+    def run(self) -> list[CheckRow]:
+        rows: list[CheckRow] = []
+        tools_dir = self.project_path / ".archon" / "tools"
+        if not tools_dir.is_dir():
+            rows.append((".archon/tools/", "warning", "not found — run: archon init"))
+            return rows
+
+        for name in ("archon-subagent.py", "archon-informal-agent.py"):
+            p = tools_dir / name
+            rows.append((name, "ok", "present") if p.exists() else (name, "warning", "missing"))
+        return rows
+
+
 class SorryCountDoctorCheck(DoctorCheck):
     title = "Sorry count"
 
@@ -353,7 +399,7 @@ class DoctorCommand:
         rows = (
             LeanToolchainDoctorCheck().run()
             + PythonToolsDoctorCheck().run()
-            + ClaudeCodeDoctorCheck(skip_auth=self.skip_auth).run()
+            + CodexCliDoctorCheck(skip_auth=self.skip_auth).run()
         )
         log.results_table(rows, title="System")
         all_rows.extend(rows)
@@ -373,8 +419,8 @@ class DoctorCommand:
         log.results_table(rows, title="State (.archon/)")
         all_rows.extend(rows)
 
-        rows = ProjectClaudeDoctorCheck(resolved).run()
-        log.results_table(rows, title="Claude Config (.claude/)")
+        rows = ProjectToolsDoctorCheck(resolved).run()
+        log.results_table(rows, title="Archon Tools (.archon/tools/)")
         all_rows.extend(rows)
 
         if (resolved / ".archon").is_dir():
@@ -406,7 +452,7 @@ def doctor(
     project_path: str = typer.Argument(".", help="Path to Lean project"),
     skip_auth: bool = typer.Option(
         False, "--skip-auth",
-        help="Skip Claude Code authentication test (faster).",
+        help="Skip Codex CLI authentication test (faster).",
     ),
 ) -> None:
     """Verify the full Archon setup.

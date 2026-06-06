@@ -2,7 +2,7 @@
 
 Handles the case where `archon init` is run on an already-initialized
 project: detect the layout, prompt the user (keep / merge / overwrite /
-abort), and on `merge` invoke Claude to walk through bundled-vs-local
+abort), and on `merge` invoke the configured driver to walk through bundled-vs-local
 file diffs.
 """
 
@@ -15,7 +15,8 @@ from pathlib import Path
 import typer
 
 from archon import log
-from archon.agent import ClaudeAgent, DEFAULT_MODEL
+from archon.agent import build_runner
+from archon.commands.tooling.project_config import load_project_config
 
 from .utils import data_path, has, parse_stage
 
@@ -70,8 +71,8 @@ class ReinitController:
 
         typer.echo("")
         typer.echo("How would you like to proceed?")
-        typer.echo("  [k] keep       — preserve prompts/CLAUDE.md; refresh MCP, skills, hooks, version stamp")
-        typer.echo("  [m] merge      — compare each file and let Claude help reconcile (recommended)")
+        typer.echo("  [k] keep       — preserve prompts/CLAUDE.md; refresh driver config, tools, hooks, version stamp")
+        typer.echo("  [m] merge      — compare each file and let the configured driver help reconcile (recommended)")
         typer.echo("  [o] overwrite  — replace all Archon files with the bundled versions")
         typer.echo("  [a] abort      — cancel")
         typer.echo("")
@@ -93,14 +94,14 @@ class ReinitController:
 
 
 class PromptMerger:
-    """Stages bundled prompts and asks Claude to reconcile them with local edits."""
+    """Stages bundled prompts and asks the configured driver to reconcile edits."""
 
     def __init__(
         self,
         project_path: Path,
         state_dir: Path,
         *,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         self.project_path = project_path
         self.state_dir = state_dir
@@ -108,7 +109,7 @@ class PromptMerger:
 
     def run(self) -> None:
         staging = self._stage_bundled_prompts()
-        self._merge_with_claude(staging)
+        self._merge_with_driver(staging)
 
     def _stage_bundled_prompts(self) -> Path:
         staging = self.state_dir / ".archon-incoming"
@@ -135,12 +136,12 @@ class PromptMerger:
                     shutil.copy2(src, staging / name)
         return staging
 
-    def _merge_with_claude(self, staging: Path) -> None:
+    def _merge_with_driver(self, staging: Path) -> None:
         log.phase(0, "Reconciling local vs. bundled Archon files")
-        log.step("Launching Claude Code to walk you through the differences file by file.")
+        log.step("Launching the configured driver to walk you through the differences file by file.")
 
-        if not has("claude"):
-            log.warn("Claude Code is not installed — falling back to a text-only diff summary.")
+        if not has("codex") and not has("claude"):
+            log.warn("No supported agent driver is installed — falling back to a text-only diff summary.")
             self._print_diff_summary(staging)
             return
 
@@ -158,7 +159,7 @@ class PromptMerger:
             legacy_block = textwrap.dedent(f"""
 
             Legacy cleanup — these Markdown subagent files predate the migration to
-            Python tool wrappers (.claude/tools/archon-<role>-agent.py). Delete them
+            Python tool wrappers (.archon/tools/archon-subagent.py). Delete them
             so the plan agent doesn't pick them up via the Agent tool by mistake:
             {legacy_list}
             """)
@@ -189,7 +190,8 @@ class PromptMerger:
             - When done, delete {staging} and report: "Merged N files, kept M files."
             """) + legacy_block
 
-        ClaudeAgent(model=self.model, role="init-merge").run_interactive(
+        cfg = load_project_config(project_path)
+        build_runner(role="init-merge", model=self.model, cfg=cfg).run_interactive(
             prompt, cwd=project_path,                                    
         )
         if staging.exists():

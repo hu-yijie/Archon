@@ -156,7 +156,7 @@ If the planner skipped provers, that should only ever be a **mechanical** hard g
 Your catalog includes read-only review subagents. Read each descriptor's full prompt at `.archon/subagents/<name>.md` before composing a directive. Dispatch each via one Bash call and **await its report before acting on it**; multiple subagents put in a single assistant message run in parallel (the harness may auto-background long dispatches), capped by `max_parallel`:
 
 ```
-python3 .claude/tools/archon-subagent.py \
+python3 .archon/tools/archon-subagent.py \
   --name <subagent-name> \
   --slug <kebab-case-slug> \
   --directive-file .archon/logs/iter-NNN/<name>-<slug>-directive.md \

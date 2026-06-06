@@ -24,6 +24,13 @@ from typing import Any
 CONFIG_FILENAME = 'config.json'
 
 
+CLAUDE_HARNESS = 'claude-code'
+CODEX_HARNESS = 'codex-gpt'
+# Codex is the zero-configuration Archon driver in this fork. Claude Code
+# remains available by explicitly selecting ``"claude-code"``.
+DEFAULT_HARNESS = CODEX_HARNESS
+
+
 def config_path(project_path: Path) -> Path:
     return project_path / '.archon' / CONFIG_FILENAME
 
@@ -35,17 +42,17 @@ def default_config() -> dict[str, Any]:
     return {
         'loop': {
             '_model_help': (
-                "Model alias used by the plan / prover / review agents. "
-                "Anthropic aliases: 'opus', 'sonnet', 'haiku' or any full "
-                "model id. Non-Anthropic providers: 'kimi' or 'deepseek' "
-                "— these require the matching credentials in .archon/.env "
-                "(MOONSHOT_API_KEY, DEEPSEEK_API_KEY). No settings file is "
-                "written to disk: env vars are injected into each "
-                "subprocess only."
+                "Fallback model alias used by Claude Code harnesses. "
+                "The default Codex harness below carries its own concrete "
+                "model id. Anthropic aliases: 'opus', 'sonnet', 'haiku' or "
+                "any full model id. Non-Anthropic Claude-compatible "
+                "providers: 'kimi' or 'deepseek' — these require the "
+                "matching credentials in .archon/.env."
             ),
             'max_iterations': 10,
             'parallel': True,
             'max_parallel': 4,
+            'harness': DEFAULT_HARNESS,
             'model': 'opus',
             'verbose_logs': False,
             'no_review': False,
@@ -140,9 +147,9 @@ def default_config() -> dict[str, Any]:
             # See .archon/MULTILANE.md for more.
             '_help': (
                 "Set 'enabled' to true and add the lanes you want. "
-                "Each lane uses Claude Code as its driver but routes "
-                "requests to a different provider via ANTHROPIC_BASE_URL "
-                "(set in .archon/.env)."
+                "Multi-lane dispatch is currently Claude Code-only because "
+                "lane result attribution depends on Claude's code_snapshot "
+                "events. The normal single-lane loop uses Codex by default."
             ),
             'enabled': False,
             'base_ref': 'main',
@@ -152,7 +159,7 @@ def default_config() -> dict[str, Any]:
             # land its own version for the merge agent to consider.
             'grace_minutes': 10,
             'lanes': [
-                # Default: a single Anthropic lane. Multilane stays
+                # Multi-lane default: a single Anthropic lane. Multilane stays
                 # disabled until ``enabled`` is flipped to true.
                 {
                     'lane_id': 'anthropic',
@@ -187,27 +194,19 @@ def default_config() -> dict[str, Any]:
             # ``multilane`` section above. Every NON-underscore key is a
             # harness descriptor (see ``load_harness_descriptor``).
             #
-            # This section is INERT by default: nothing references it. With
-            # no ``loop.harness`` / ``loop.roles`` key set, every role uses
-            # the built-in ``claude-code`` engine and this block is never
-            # consulted. ``archon init`` writes ``loop.harness`` /
-            # ``loop.roles`` here only if you pick a non-default harness at
-            # init time. No ``claude-code`` descriptor is shipped on purpose
-            # — its absence keeps the default single-Anthropic path on its
-            # zero-config fast path.
+            # ``loop.harness`` references the Codex descriptor below by
+            # default. No ``claude-code`` descriptor is shipped on purpose —
+            # its absence keeps Claude Code available as a tiny built-in
+            # descriptor when explicitly selected.
             '_help': (
                 "A harness is the engine that runs a role (plan/prover/"
-                "review). Default is Claude Code: with no loop.harness / "
-                "loop.roles key, every role uses 'claude-code' and this "
-                "block is ignored. Route a role to codex by setting "
-                "loop.harness (all roles) or loop.roles.<role> (one role) "
-                "to a descriptor name below, e.g. 'codex-gpt'."
+                "review). Default is Codex CLI: with no loop.harness / "
+                "loop.roles key, every role uses 'codex-gpt'. Route a role "
+                "to Claude Code by setting loop.harness (all roles) or "
+                "loop.roles.<role> (one role) to 'claude-code'."
             ),
             'codex-gpt': {
-                # OpenAI Codex (`codex exec`) instead of Claude Code. Best
-                # fit for the PROVER role (the prompt_variant below is
-                # prover-tuned). Routing plan/review here also works but
-                # they inherit that prover tail and lack WebSearch/WebFetch.
+                # OpenAI Codex (`codex exec`) instead of Claude Code.
                 'runner': 'codex',
                 'model': 'gpt-5.5',
                 'effort': 'xhigh',
@@ -241,7 +240,7 @@ def render_default_config() -> str:
 # uses these to validate a ``--harness`` flag and drive its menu.
 
 LOOP_ROLES = ('plan', 'prover', 'review')
-SHIPPED_HARNESSES = ('codex-gpt',)
+SHIPPED_HARNESSES = (CODEX_HARNESS,)
 
 
 def apply_harness_selection(cfg: dict[str, Any], selection: Any) -> None:
@@ -249,27 +248,35 @@ def apply_harness_selection(cfg: dict[str, Any], selection: Any) -> None:
 
     ``selection`` is one of:
 
-    * ``None`` / ``"claude-code"`` — no-op (the default single-Anthropic
-      path; no ``loop.harness`` / ``loop.roles`` key is written, so the
-      ``build_runner`` zero-regression short-circuit stays in effect).
+    * ``None`` / ``"codex-gpt"`` — no-op (the Codex default path; the
+      default config already sets ``loop.harness`` to ``"codex-gpt"``).
+    * ``"claude-code"`` — sets ``cfg['loop']['harness']`` so every role
+      uses the explicit Claude Code runner.
     * a harness name string (e.g. ``"codex-gpt"``) — sets
       ``cfg['loop']['harness']`` so *every* role uses it.
     * a ``{role: harness_name}`` dict — sets ``cfg['loop']['roles']`` for a
-      per-role (mixed) routing. Entries naming the default ``"claude-code"``
-      are dropped (absence already means claude-code); unknown roles are
-      ignored. An all-default / empty mapping writes nothing.
+      per-role (mixed) routing. Entries naming the default ``"codex-gpt"``
+      are dropped (absence already means codex-gpt); unknown roles are
+      ignored. An all-default / empty mapping removes any stale
+      ``loop.roles`` key.
 
     Idempotent in spirit: only the keys implied by ``selection`` are
     touched; the rest of ``cfg['loop']`` is left as-is.
     """
-    if selection is None:
-        return
     loop = cfg.setdefault('loop', {})
+    if selection is None:
+        loop['harness'] = DEFAULT_HARNESS
+        loop.pop('roles', None)
+        return
     if isinstance(selection, str):
+        loop.pop('roles', None)
         if selection and selection != DEFAULT_HARNESS:
             loop['harness'] = selection
+        else:
+            loop['harness'] = DEFAULT_HARNESS
         return
     if isinstance(selection, dict):
+        loop['harness'] = DEFAULT_HARNESS
         roles = {
             role: name
             for role, name in selection.items()
@@ -280,6 +287,8 @@ def apply_harness_selection(cfg: dict[str, Any], selection: Any) -> None:
         }
         if roles:
             loop['roles'] = roles
+        else:
+            loop.pop('roles', None)
         return
     raise TypeError(
         f"apply_harness_selection: unsupported selection {selection!r} "
@@ -300,8 +309,7 @@ def write_default_config(
 
     ``harness_selection`` (see :func:`apply_harness_selection`) routes loop
     roles to a non-default harness in the freshly written config; ``None``
-    (the default) writes the plain default config, preserving the
-    single-Anthropic behavior.
+    (the default) writes the plain Codex-first default config.
     """
     path = config_path(project_path)
     if path.exists() and not force:
@@ -384,14 +392,8 @@ def resolve_subagent_model(
 # ── harness resolution ────────────────────────────────────────────────
 #
 # A *harness* is the engine that runs a responsibility (plan / prover /
-# review / a subagent / a lane). Phase 1 ships exactly one harness —
-# ``"claude-code"`` — and these resolvers always return it for an
-# unconfigured project, so the default single-agent path is unchanged.
-# The schema is additive and mirrors the per-subagent ``model`` override
-# above: when no ``harness`` / ``roles`` keys are present, everything
-# resolves to the built-in default.
-
-DEFAULT_HARNESS = 'claude-code'
+# review / a subagent). Codex is the default harness in this fork; Claude
+# Code is still a supported explicit harness name.
 
 
 def resolve_role_harness(
@@ -403,8 +405,8 @@ def resolve_role_harness(
     ``loop.roles.<role>`` (str → harness name; dict → ``.harness``)
     > ``loop.harness`` > ``fallback``.
 
-    Returns ``fallback`` (``"claude-code"``) for an empty/unconfigured
-    project, so the default loop path is unaffected.
+    Returns ``fallback`` (``"codex-gpt"``) for an empty/unconfigured
+    project.
     """
     loop_section = cfg.loop_section()
     roles = loop_section.get('roles')
@@ -473,9 +475,9 @@ class HarnessDescriptor:
 
     Fields common to all harnesses:
 
-    * ``name`` — the harness key (e.g. ``"claude-code"`` / ``"codex-gpt"``).
+    * ``name`` — the harness key (e.g. ``"codex-gpt"`` / ``"claude-code"``).
     * ``runner`` — which engine implements it. Supported runners:
-      ``"claude-code"`` (the built-in) and ``"codex"`` (Phase 2).
+      ``"claude-code"`` (the built-in Claude runner) and ``"codex"``.
     * ``model`` — optional model id for this harness. For claude-code it
       overrides the role/loop model alias; for codex it is the concrete
       ``codex exec -m <model>`` model id (e.g. ``"gpt-5.5-xhigh"``).
@@ -508,7 +510,7 @@ class HarnessDescriptor:
       ``"responses"`` (so codex's previous_response_id cache chain works).
     """
     name: str
-    runner: str = DEFAULT_HARNESS
+    runner: str = CLAUDE_HARNESS
     model: str | None = None
     effort: str | None = None
     sandbox: str = 'danger-full-access'
@@ -545,10 +547,10 @@ def load_harness_descriptor(cfg: ProjectConfig, name: str) -> HarnessDescriptor:
     """Resolve a harness name to its :class:`HarnessDescriptor`.
 
     Looks up ``harnesses.<name>`` in the config. When the section is
-    absent — or when ``name`` is the built-in ``"claude-code"`` and has
-    no explicit override — returns a built-in descriptor whose runner is
-    ``"claude-code"``. This keeps the default path free of any config
-    plumbing.
+    absent and ``name`` is ``"claude-code"`` — returns a built-in
+    descriptor whose runner is ``"claude-code"``. Other absent names
+    default their runner to the harness name so unknown harnesses still
+    fail clearly at :func:`archon.agent.build_runner`.
 
     A configured descriptor with no ``runner`` key defaults its runner
     to its own name (so ``"harnesses": {"claude-code": {...}}`` works as
@@ -561,10 +563,14 @@ def load_harness_descriptor(cfg: ProjectConfig, name: str) -> HarnessDescriptor:
     """
     harnesses = cfg.raw.get('harnesses')
     entry = harnesses.get(name) if isinstance(harnesses, dict) else None
+    if not isinstance(entry, dict) and name == DEFAULT_HARNESS:
+        shipped = default_config().get('harnesses', {}).get(DEFAULT_HARNESS)
+        if isinstance(shipped, dict):
+            entry = shipped
     if not isinstance(entry, dict):
-        # No explicit descriptor → built-in. The runner defaults to the
-        # harness name, which for ``"claude-code"`` is exactly the
-        # built-in engine.
+        # No explicit descriptor. ``claude-code`` is a built-in runner;
+        # every other absent name defaults to itself so unsupported
+        # harness names fail clearly later.
         return HarnessDescriptor(name=name, runner=name)
     runner = entry.get('runner')
     if not isinstance(runner, str) or not runner:
@@ -586,13 +592,16 @@ def load_harness_descriptor(cfg: ProjectConfig, name: str) -> HarnessDescriptor:
     )
 
 
+def default_harness_descriptor() -> HarnessDescriptor:
+    """Return the shipped descriptor for the default Codex harness."""
+    return load_harness_descriptor(ProjectConfig(raw=default_config()), DEFAULT_HARNESS)
+
+
 def has_explicit_harness_override(cfg: ProjectConfig, name: str) -> bool:
     """True iff ``harnesses.<name>`` is explicitly present in the config.
 
-    Used by :func:`archon.agent.build_runner` to decide whether the
-    zero-regression short-circuit applies: a ``"claude-code"`` role with
-    no explicit ``harnesses."claude-code"`` entry must build exactly the
-    legacy ``ClaudeAgent``.
+    Used by :func:`archon.agent.build_runner` to distinguish an explicit
+    descriptor from the built-in ``"claude-code"`` runner.
     """
     harnesses = cfg.raw.get('harnesses')
     return isinstance(harnesses, dict) and isinstance(

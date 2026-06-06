@@ -8,8 +8,8 @@ descriptor with ``runner: "codex"``.
 
 This is a **lean cut** (see ``docs/MIGRATION.md`` for the honest limits):
 
-* Headless only. :meth:`run_interactive` raises — interactive sites
-  (``archon discuss`` / ``refactor draft``) stay on claude-code.
+* Headless ``codex exec`` for loop phases and foreground Codex TUI for
+  interactive sites (``archon discuss`` / ``refactor draft``).
 * No true resume. Codex mints its own ``thread_id`` and resumes via a
   separate subcommand; v1 logs a warning and runs fresh when a
   ``resume_session_id`` is passed.
@@ -763,6 +763,42 @@ class CodexAgent:
             last_ok = False
         return last_ok
 
+    def build_interactive_argv(
+        self,
+        prompt: str,
+        *,
+        extra_args: list[str] | None = None,
+        env_source: dict[str, str] | None = None,
+        lake_root: Path | str | None = None,
+    ) -> list[str]:
+        """Build the foreground ``codex`` TUI argv for interactive commands."""
+        argv = [
+            "codex",
+            "-m",
+            self.model,
+        ]
+        if self.effort:
+            argv += ["-c", f'model_reasoning_effort="{self.effort}"']
+
+        base_url, api_key = self._gateway_creds(env_source)
+        if base_url and api_key:
+            argv += [
+                "-c", f'model_provider="{_GATEWAY_PROVIDER}"',
+                "-c", f'model_providers.{_GATEWAY_PROVIDER}.name="{_GATEWAY_PROVIDER}"',
+                "-c", f'model_providers.{_GATEWAY_PROVIDER}.base_url="{base_url}"',
+                "-c", f'model_providers.{_GATEWAY_PROVIDER}.env_key="{_GATEWAY_KEY_ENV}"',
+                "-c", f'model_providers.{_GATEWAY_PROVIDER}.wire_api="{self.descriptor.wire_api}"',
+                "-c", f"model_providers.{_GATEWAY_PROVIDER}.supports_websockets=false",
+            ]
+
+        argv += self._mcp_overrides(lake_root)
+        argv += ["--sandbox", self.sandbox]
+        argv += self._descriptor_extra_args()
+        if extra_args:
+            argv += list(extra_args)
+        argv.append(prompt)
+        return argv
+
     def run_interactive(
         self,
         prompt: str,
@@ -770,10 +806,16 @@ class CodexAgent:
         cwd: Path,
         extra_args: list[str] | None = None,
     ) -> int:
-        raise NotImplementedError(
-            "codex harness is headless-only; interactive roles stay on "
-            "claude-code"
+        """Foreground Codex TUI run, equivalent to ``codex <prompt>``."""
+        import subprocess
+
+        prompt = self._apply_prompt_variant(prompt, project_path=cwd)
+        env = self.build_env()
+        self._announce()
+        argv = self.build_interactive_argv(
+            prompt, extra_args=extra_args, env_source=env, lake_root=cwd,
         )
+        return subprocess.run(argv, cwd=cwd, env=env).returncode
 
     # ── internals ────────────────────────────────────────────────────────
 

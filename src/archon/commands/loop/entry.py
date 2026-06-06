@@ -55,7 +55,7 @@ def loop(
     ),
     verbose_logs: Optional[bool] = typer.Option(
         None, "--verbose-logs/--no-verbose-logs",
-        help="Save raw Claude stream events to .raw.jsonl. (default from config or off)",
+        help="Save raw agent stream events to .raw.jsonl. (default from config or off)",
     ),
     no_review: Optional[bool] = typer.Option(
         None, "--no-review/--review",
@@ -79,7 +79,7 @@ def loop(
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run",
-        help="Print prompts without launching Claude.",
+        help="Print prompts without launching an agent.",
     ),
     no_dashboard: bool = typer.Option(
         False, "--no-dashboard",
@@ -95,11 +95,8 @@ def loop(
     ),
     model: Optional[str] = typer.Option(
         None, "--model", "-M",
-        help="Model used for every plan / prover / review phase in the loop. "
-             "Anthropic aliases: 'opus', 'sonnet', 'haiku' or a full id. "
-             "Non-Anthropic providers (require credentials in .archon/.env): "
-             "'kimi', 'deepseek'. "
-             "(default from .archon/config.json or 'opus')",
+        help="Model override for Claude Code harnesses. Codex uses the "
+             "configured harness descriptor unless config.json sets loop.model.",
     ),
     from_phase: Optional[str] = typer.Option(
         None, "--from",
@@ -114,13 +111,13 @@ def loop(
     ),
     resume: bool = typer.Option(
         False, "--resume",
-        help="Resume the previous iteration's Claude session. Without "
+        help="Resume the previous iteration's agent session. Without "
              "--from, auto-detects which phase to resume by scanning the "
              "prior iter's meta.json for the first plan/prover/review whose "
              "status isn't 'done' (i.e. the one that crashed). With "
              "--from <phase>, resumes that specific phase. Reuses the prior "
              "iter-NNN dir, looks up the stored session id, and invokes "
-             "claude with --resume <id> plus a short 'continue from where "
+             "the selected harness with a short 'continue from where "
              "you left off' prompt instead of re-priming with the full "
              "phase prompt. Falls back to a fresh run when no session id is "
              "stored. Only affects the FIRST iteration; subsequent "
