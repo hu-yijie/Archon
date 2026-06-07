@@ -22,7 +22,10 @@ import typer
 
 from archon import log
 from archon.agent import build_runner
-from archon.commands.tooling.project_config import load_project_config
+from archon.commands.tooling.project_config import (
+    load_project_config,
+    resolve_subagents_enabled,
+)
 from archon.commands.tooling.inner_git import InnerGit
 from archon.commands.tooling.iteration import commit_phase
 from archon.commands.tooling.version import warn_if_mismatch
@@ -213,7 +216,11 @@ class RefactorRunCommand:
         from archon.subagents.base import Subagent
         from archon.subagents.registry import build_registry
 
-        registry = build_registry(resolved)
+        cfg = load_project_config(resolved)
+        registry = build_registry(
+            resolved,
+            enabled=resolve_subagents_enabled(cfg),
+        )
         descriptor = registry.get("refactor")
         if descriptor is None:
             log.error(

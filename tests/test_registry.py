@@ -11,8 +11,10 @@ Covers:
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from archon.subagents.base import SubagentDescriptor
@@ -310,6 +312,50 @@ class ResolveSubagentModelTest(unittest.TestCase):
             resolve_subagent_model(cfg, "anything", fallback="opus"),
             "opus",
         )
+
+
+# ── refactor command registry wiring ─────────────────────────────────
+
+
+class RefactorRunRegistryWiringTest(unittest.TestCase):
+    def test_refactor_run_honors_enabled_config(self):
+        """Manual refactor runs must honor subagents.enabled."""
+        from archon.commands.refactor import RefactorRunCommand
+        from archon.subagents.base import SubagentResult
+
+        with tempfile.TemporaryDirectory() as d:
+            project = Path(d)
+            state_dir = project / ".archon"
+            subagents = state_dir / "subagents"
+            subagents.mkdir(parents=True)
+            (state_dir / "config.json").write_text(
+                json.dumps({"subagents": {"enabled": ["refactor"]}}),
+                encoding="utf-8",
+            )
+            _write_descriptor(
+                subagents,
+                "refactor",
+                {
+                    "name": "refactor",
+                    "description": "Refactor structural Lean code.",
+                    "default_enabled": False,
+                },
+            )
+
+            result = SubagentResult(
+                ok=True, duration_s=0, report_path=None, summary="",
+            )
+            with mock.patch(
+                "archon.subagents.base.Subagent.run",
+                return_value=result,
+            ) as run:
+                ok, secs = RefactorRunCommand(str(project))._invoke_agent(
+                    project, state_dir, 1, "directive",
+                )
+
+        self.assertTrue(ok)
+        self.assertEqual(secs, 0)
+        run.assert_called_once()
 
 
 # ── mandatory frontmatter parsing ───────────────────────────────────
